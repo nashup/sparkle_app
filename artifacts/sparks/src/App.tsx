@@ -2,6 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { WsProvider } from "@/hooks/ws-context";
 
 import Welcome from "./pages/welcome";
 import Lobby from "./pages/lobby";
@@ -30,7 +31,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <WsProvider>
+            <Router />
+          </WsProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

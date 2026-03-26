@@ -79,9 +79,10 @@ export const useGameStore = create<GameState>()(
       setIsConnected: (status) => set({ isConnected: status }),
 
       chatMessages: [],
-      addChatMessage: (msg) => set((state) => ({
-        chatMessages: [...state.chatMessages.slice(-99), msg]
-      })),
+      addChatMessage: (msg) => set((state) => {
+        if (state.chatMessages.some(m => m.id === msg.id)) return state;
+        return { chatMessages: [...state.chatMessages.slice(-99), msg] };
+      }),
       clearChat: () => set({ chatMessages: [] }),
 
       floatingReactions: [],

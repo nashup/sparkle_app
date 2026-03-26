@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useWebSocket } from '@/hooks/use-websocket';
+import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
@@ -14,7 +14,13 @@ export default function Game() {
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions } = useGameStore();
 
-  const { sendChat, sendReaction, setChatOpen } = useWebSocket(code);
+  const { sendChat: wsSendChat, sendReaction: wsSendReaction, setChatOpen, joinRoom } = useWs();
+  const sendChat = useCallback((text: string) => wsSendChat(text, code || ''), [wsSendChat, code]);
+  const sendReaction = useCallback((emoji: string) => wsSendReaction(emoji, code || ''), [wsSendReaction, code]);
+
+  useEffect(() => {
+    if (code) joinRoom(code);
+  }, [code, joinRoom]);
   const updateStateMutation = useUpdateGameState();
 
   const [answer, setAnswer] = useState('');

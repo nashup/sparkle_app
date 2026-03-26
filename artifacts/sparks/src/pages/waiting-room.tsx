@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useWebSocket } from '@/hooks/use-websocket';
+import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,11 @@ export default function WaitingRoom() {
   const { playerInfo, currentRoom, isAdult } = useGameStore();
   const { toast } = useToast();
   
-  const { isConnected } = useWebSocket(code);
+  const { isConnected, joinRoom } = useWs();
+
+  useEffect(() => {
+    if (code) joinRoom(code);
+  }, [code, joinRoom]);
 
   const updateStateMutation = useUpdateGameState();
 
