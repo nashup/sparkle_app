@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
+import { v4 as uuidv4 } from "uuid";
 import {
   addConnection,
   removeConnection,
@@ -28,7 +29,6 @@ export function setupWebSocket(server: Server) {
 
           addConnection(currentRoomCode, playerId, ws);
 
-          // Send current room state back
           const rooms = getRooms();
           const room = rooms[currentRoomCode];
           if (room) {
@@ -38,11 +38,31 @@ export function setupWebSocket(server: Server) {
           logger.info({ roomCode: currentRoomCode, playerId }, "Player joined WS room");
         }
 
+        if (message.type === "chat" && currentRoomCode) {
+          const chatMessage = {
+            id: uuidv4(),
+            playerId: message.playerId || currentPlayerId,
+            username: message.username || "Unknown",
+            avatar: message.avatar || "⭐",
+            text: String(message.text || "").slice(0, 500),
+            timestamp: Date.now(),
+          };
+          broadcastToRoom(currentRoomCode, { type: "chat:message", message: chatMessage });
+        }
+
+        if (message.type === "react" && currentRoomCode) {
+          broadcastToRoom(currentRoomCode, {
+            type: "reaction",
+            emoji: message.emoji,
+            playerId: message.playerId || currentPlayerId,
+          });
+        }
+
         if (message.type === "ping") {
           ws.send(JSON.stringify({ type: "pong" }));
         }
       } catch {
-        // Ignore invalid messages
+        // ignore
       }
     });
 
