@@ -1,0 +1,16 @@
+packages:
+  "framer-motion": "For fluid, playful page transitions and card swipe animations required by the game's bold style"
+  "zustand": "For managing global game state, player identity, and syncing WebSocket events efficiently"
+  "lucide-react": "For UI icons like locks, arrows, and settings"
+  "canvas-confetti": "For celebration effects when game finishes or reaching results screen"
+  "uuid": "For generating unique player IDs for sessions"
+
+images:
+  - path: "artifacts/sparks/public/images/hero-sparks.png"
+    description: "A vibrant, 3D rendered abstract spark or flame icon, glossy glassmorphism style, glowing in bright pink, purple, and orange colors on a transparent background"
+    aspect_ratio: "1:1"
+
+notes:
+  - Game uses a fixed max-width mobile-first layout centered on screen.
+  - WebSockets connect to the same host using standard ws:// or wss:// protocols.
+  - Orval React Query hooks are used for REST mutations, Zustand is used for holding the current real-time room state.

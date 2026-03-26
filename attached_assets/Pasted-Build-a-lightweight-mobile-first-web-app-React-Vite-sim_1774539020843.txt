@@ -1,0 +1,90 @@
+Build a lightweight mobile-first web app (React + Vite + simple Node/Express backend, or even frontend-only with local storage + optional Firebase).
+
+APP IDEA:
+A colorful, aesthetic couples/flirty game app for two users in different locations.
+
+CORE FEATURES:
+1. Instant Access
+- email verified for age (under 18 not allowed to use Levels 3 and 4).
+- Users create a username on the spot
+- Choose from a small set of pre-made AI generated avatar images (10–15 max, stored locally)
+
+2. Pairing System
+- Generate a simple room code
+- One user creates room, the other joins via code
+- Real-time sync (use Firebase Realtime DB or WebSockets if possible, but keep it minimal)
+
+3. UI/UX DESIGN
+- Bright, modern, playful UI (gradient backgrounds, soft shadows, rounded cards)
+- Avoid boring templates
+- Smooth transitions and animations (fade, slide)
+- Mobile-first layout
+
+4. GAME SYSTEM (VERY SIMPLE STRUCTURE)
+- Only 3-4 core games
+- Each game uses a shared “card” system or chat system (limited) or rating system for cards
+
+GAME TYPES:
+
+A. “Know Me Better”
+- Light questions (favorite food, shows, habits)
+- Multiple choice or short answers
+- Indepth vulgar questions for higher levels (could be regarding sexual positions or preferences)
+
+B. “Pick One”
+- Two scenarios, both slightly flirty or funny
+- Example tone: playful, teasing, slightly romantic, vulgar (based on level)
+
+C. “Dare / Reveal”
+- Users either answer or perform a simple dare
+- Dares can be simple and vulgar based on level.
+
+5. VULGARITY / INTIMACY LEVEL SYSTEM
+- Slider from Level 1 to Level 4
+- Level 1: casual, friendly questions
+- Level 2: flirty and playful
+- Level 3: romantic and intimate (non-explicit)
+- Level 4: bold, suggestive, deeper personal/relationship questions (explicit sexual descriptions)
+
+- Filter questions based on selected level
+
+6. GAME FLOW
+- Turn-based system OR Spin the Wheel based system
+- One card appears at a time
+- Both users respond or choose
+- Show results after both answer
+
+7. MINIMAL DATA STRUCTURE
+- Store:
+  - username
+  - avatar
+  - room ID
+  - current question
+  - answers
+
+8. PERFORMANCE / COST OPTIMIZATION
+- Keep assets local
+- Avoid heavy libraries
+- Limit API calls
+- Preload all questions in JSON
+- Use simple state management (React hooks only)
+
+9. BONUS (IF CHEAP)
+- Emoji reactions ❤️🔥😂
+- Subtle sound effects
+
+STYLE GUIDE:
+- Colors: gradients (pink, purple, orange, blue)
+- Fonts: modern rounded sans-serif
+- Cards with soft shadows and glassmorphism effect
+
+DELIVERABLE:
+- Clean folder structure
+- Easy to run on Replit
+- Commented code
+- Simple instructions to deploy
+
+IMPORTANT:
+Keep everything lightweight, minimal, and optimized for low compute usage.
+Avoid complex backend logic unless necessary.
+Focus on smooth UX and engaging gameplay rather than feature overload.

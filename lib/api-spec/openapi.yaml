@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Sparks couples game API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: rooms
+    description: Game room operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,115 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /rooms:
+    post:
+      operationId: createRoom
+      tags: [rooms]
+      summary: Create a new game room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomRequest"
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+  /rooms/{code}:
+    get:
+      operationId: getRoom
+      tags: [rooms]
+      summary: Get a room by code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /rooms/{code}/join:
+    post:
+      operationId: joinRoom
+      tags: [rooms]
+      summary: Join an existing game room
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRoomRequest"
+      responses:
+        "200":
+          description: Joined room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Room is full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /rooms/{code}/game-state:
+    put:
+      operationId: updateGameState
+      tags: [rooms]
+      summary: Update the game state of a room
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGameStateRequest"
+      responses:
+        "200":
+          description: Game state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +144,117 @@ components:
       required:
         - status
 
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        avatar:
+          type: string
+        isReady:
+          type: boolean
+      required:
+        - id
+        - username
+        - avatar
+        - isReady
+
+    GameState:
+      type: object
+      properties:
+        phase:
+          type: string
+          enum: [lobby, playing, results, finished]
+        gameType:
+          type: string
+          enum: [know-me-better, pick-one, dare-reveal]
+          nullable: true
+        intimacyLevel:
+          type: integer
+          minimum: 1
+          maximum: 4
+        currentCardIndex:
+          type: integer
+        currentTurn:
+          type: string
+          nullable: true
+        answers:
+          type: object
+          additionalProperties:
+            type: string
+        spinResult:
+          type: string
+          nullable: true
+      required:
+        - phase
+        - intimacyLevel
+        - currentCardIndex
+        - answers
+
+    Room:
+      type: object
+      properties:
+        code:
+          type: string
+        players:
+          type: array
+          items:
+            $ref: "#/components/schemas/Player"
+        gameState:
+          $ref: "#/components/schemas/GameState"
+        createdAt:
+          type: string
+      required:
+        - code
+        - players
+        - gameState
+        - createdAt
+
+    CreateRoomRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        avatar:
+          type: string
+        playerId:
+          type: string
+      required:
+        - username
+        - avatar
+        - playerId
+
+    JoinRoomRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        avatar:
+          type: string
+        playerId:
+          type: string
+      required:
+        - username
+        - avatar
+        - playerId
+
+    UpdateGameStateRequest:
+      type: object
+      properties:
+        playerId:
+          type: string
+        gameState:
+          $ref: "#/components/schemas/GameState"
+      required:
+        - playerId
+        - gameState
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
