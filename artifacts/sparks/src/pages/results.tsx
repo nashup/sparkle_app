@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
+import { useAuth } from '@/hooks/use-auth';
+import { clearDeviceSession } from '@/pages/lobby';
 import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
 import { LayoutWrapper } from '@/components/layout-wrapper';
@@ -16,7 +18,8 @@ const REACTIONS = ['❤️', '🔥', '😂', '🥵', '😳'];
 export default function Results() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
-  const { playerInfo, currentRoom, floatingReactions } = useGameStore();
+  const { playerInfo, currentRoom, floatingReactions, leaveRoom } = useGameStore();
+  const { user } = useAuth();
   const { sendChat: wsSendChat, sendReaction: wsSendReaction, setChatOpen, joinRoom } = useWs();
   const sendChat = (text: string) => wsSendChat(text, code || '');
   const sendReaction = (emoji: string) => wsSendReaction(emoji, code || '');
@@ -40,8 +43,6 @@ export default function Results() {
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
       setLocation(`/game/${code}`);
-    } else if (currentRoom?.gameState?.phase === 'lobby') {
-      setLocation(`/room/${code}`);
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
 
@@ -79,21 +80,11 @@ export default function Results() {
     });
   };
 
-  const handleLevelComplete = () => {
+  const handleLevelComplete = async () => {
     confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-    updateStateMutation.mutate({
-      code: code!,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: {
-          ...currentRoom.gameState,
-          phase: 'lobby',
-          currentCardIndex: 0,
-          answers: {},
-          gameType: null
-        }
-      }
-    });
+    if (user) await clearDeviceSession(user.id);
+    leaveRoom();
+    setLocation('/lobby');
   };
 
   const handleReaction = (emoji: string) => {

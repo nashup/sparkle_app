@@ -1,19 +1,28 @@
 import { useEffect } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
+import { useAuth } from '@/hooks/use-auth';
+import { clearDeviceSession } from '@/pages/lobby';
 import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { Button } from '@/components/ui/button';
-import { Copy, Play, Lock, Flame } from 'lucide-react';
+import { Copy, Play, Lock, Flame, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { GameStateGameType } from '@workspace/api-client-react';
 
 export default function WaitingRoom() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
-  const { playerInfo, currentRoom, isAdult } = useGameStore();
+  const { playerInfo, currentRoom, isAdult, leaveRoom } = useGameStore();
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  const handleLeave = async () => {
+    if (user) await clearDeviceSession(user.id);
+    leaveRoom();
+    setLocation('/lobby');
+  };
   
   const { isConnected, joinRoom } = useWs();
 
@@ -216,7 +225,7 @@ export default function WaitingRoom() {
           </div>
         </div>
 
-        <div className="mt-8 pt-4">
+        <div className="mt-8 pt-4 space-y-3">
           {isHost ? (
             <Button 
               className="w-full" 
@@ -233,6 +242,14 @@ export default function WaitingRoom() {
               <p className="text-white font-medium">Waiting for Host to start...</p>
             </div>
           )}
+          <Button
+            className="w-full opacity-60"
+            size="lg"
+            variant="ghost"
+            onClick={handleLeave}
+          >
+            <LogOut className="mr-2 w-4 h-4" /> Leave Room
+          </Button>
         </div>
       </div>
     </LayoutWrapper>
