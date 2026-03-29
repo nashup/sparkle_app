@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,23 @@ export default function Auth() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Warn developers on mount if the Supabase redirect URL is likely missing
+  // from the Supabase dashboard (Replit hostname detected).
+  useEffect(() => {
+    if (import.meta.env.DEV && import.meta.env.VITE_SUPABASE_URL) {
+      const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`;
+      const isReplit = /replit\.(dev|app)/.test(window.location.hostname);
+      if (isReplit) {
+        console.warn(
+          '[Sparks] Google OAuth setup required:\n' +
+          'Add this URL to Supabase > Authentication > URL Configuration > Additional Redirect URLs:\n' +
+          redirectTo + '\n' +
+          'Without it, Google sign-in will fail and the app will stay on the loading spinner.'
+        );
+      }
+    }
+  }, []);
 
   const handleEmail = async () => {
     setError('');
@@ -54,8 +71,8 @@ export default function Auth() {
     // will never be established (app stays on the loading spinner).
     const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`;
 
-    if (import.meta.env.DEV) {
-      console.info('[Sparks] Google OAuth redirectTo:', redirectTo,
+    if (import.meta.env.DEV && import.meta.env.VITE_SUPABASE_URL) {
+      console.warn('[Sparks] Google OAuth redirectTo:', redirectTo,
         '\nMake sure this URL is added to Supabase > Auth > URL Configuration > Additional Redirect URLs');
     }
 
