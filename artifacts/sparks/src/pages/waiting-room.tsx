@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { clearDeviceSession } from '@/pages/lobby';
@@ -31,13 +31,15 @@ export default function WaitingRoom() {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
 
+  // Track whether we are navigating within the room (internal transition) so
+  // the unmount cleanup knows not to release the device session in that case.
+  const internalTransitionRef = useRef(false);
+
   // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
-  // Upsert is self-healing: if a mid-route unmount clears room_code, the next
-  // tick restores it. Only explicit clearDeviceSession() calls (on leave/end)
-  // intentionally null out room_code.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
+    internalTransitionRef.current = false;
     const tick = () => supabase.from('device_sessions').upsert({
       device_id: deviceId,
       room_code: code,
@@ -45,13 +47,23 @@ export default function WaitingRoom() {
     }, { onConflict: 'device_id' });
     tick();
     const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      // Release session on unexpected exit; skip for internal room transitions.
+      if (!internalTransitionRef.current) {
+        supabase.from('device_sessions').update({
+          room_code: null,
+          last_active: new Date().toISOString(),
+        }).eq('device_id', deviceId).then(() => {});
+      }
+    };
   }, [code]);
 
   const updateStateMutation = useUpdateGameState();
 
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
+      internalTransitionRef.current = true; // internal — keep session locked
       setLocation(`/game/${code}`);
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);

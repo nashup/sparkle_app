@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { clearDeviceSession } from '@/pages/lobby';
@@ -29,11 +29,14 @@ export default function Results() {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
 
+  const internalTransitionRef = useRef(false);
+
   // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
   // Upsert is self-healing: mid-route unmounts won't break the lock.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
+    internalTransitionRef.current = false;
     const tick = () => supabase.from('device_sessions').upsert({
       device_id: deviceId,
       room_code: code,
@@ -41,7 +44,15 @@ export default function Results() {
     }, { onConflict: 'device_id' });
     tick();
     const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (!internalTransitionRef.current) {
+        supabase.from('device_sessions').update({
+          room_code: null,
+          last_active: new Date().toISOString(),
+        }).eq('device_id', deviceId).then(() => {});
+      }
+    };
   }, [code]);
 
   const updateStateMutation = useUpdateGameState();
@@ -58,6 +69,7 @@ export default function Results() {
 
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
+      internalTransitionRef.current = true; // internal — keep session locked
       setLocation(`/game/${code}`);
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
