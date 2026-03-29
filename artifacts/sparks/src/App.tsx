@@ -38,9 +38,9 @@ function AppRoutes() {
 
   useEffect(() => {
     if (isLoading) return;
-    // Legacy /auth route — always redirect away
+    // Legacy /auth route — redirect to root and let routing logic handle it
     if (location === '/auth') {
-      setLocation(isProfileComplete ? '/lobby' : '/profile-setup');
+      setLocation('/');
       return;
     }
     if (!isProfileComplete && location !== '/profile-setup' && !location.startsWith('/privacy-policy')) {

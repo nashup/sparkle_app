@@ -49,13 +49,17 @@ export default function Lobby() {
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
 
-  // On lobby mount, clear any stale room_code for this device
+  // On lobby mount, clear room_code only if the session is stale (past timeout)
   useEffect(() => {
     const deviceId = getDeviceId();
+    const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
     supabase.from('device_sessions').update({
       room_code: null,
       last_active: new Date().toISOString(),
-    }).eq('device_id', deviceId).then(() => {});
+    })
+      .eq('device_id', deviceId)
+      .lt('last_active', cutoff)
+      .then(() => {});
   }, []);
 
   const createRoomMutation = useCreateRoom({

@@ -25,7 +25,7 @@ export default function Game() {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
 
-  // Heartbeat — keep device session alive while in game
+  // Heartbeat — keep device session alive; release room on unmount
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -34,7 +34,13 @@ export default function Game() {
     }).eq('device_id', deviceId);
     tick();
     const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      supabase.from('device_sessions').update({
+        room_code: null,
+        last_active: new Date().toISOString(),
+      }).eq('device_id', deviceId).then(() => {});
+    };
   }, [code]);
 
   const updateStateMutation = useUpdateGameState();
