@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useAuth } from '@/hooks/use-auth';
+import { useDeviceIdentity } from '@/hooks/use-device-identity';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
+import { SESSION_TIMEOUT_MS } from '@/lib/session';
 import { useCreateRoom, useJoinRoom } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,60 +12,54 @@ import { LayoutWrapper } from '@/components/layout-wrapper';
 import { Users, PlusCircle, UserCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const SESSION_ACTIVE_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-async function claimDeviceSession(userId: string, roomCode: string): Promise<{ ok: boolean; existingRoom?: string }> {
+async function claimDeviceSession(roomCode: string): Promise<{ ok: boolean; existingRoom?: string }> {
   const deviceId = getDeviceId();
 
   const { data: existing } = await supabase
     .from('device_sessions')
     .select('room_code, last_active')
-    .eq('user_id', userId)
     .eq('device_id', deviceId)
     .single();
 
-  if (existing?.room_code && new Date(existing.last_active).getTime() > Date.now() - SESSION_ACTIVE_MS) {
+  if (existing?.room_code && new Date(existing.last_active).getTime() > Date.now() - SESSION_TIMEOUT_MS) {
     return { ok: false, existingRoom: existing.room_code };
   }
 
   await supabase.from('device_sessions').upsert({
-    user_id: userId,
     device_id: deviceId,
     room_code: roomCode,
     last_active: new Date().toISOString(),
-  }, { onConflict: 'user_id,device_id' });
+  }, { onConflict: 'device_id' });
 
   return { ok: true };
 }
 
-export async function clearDeviceSession(userId: string) {
+export async function clearDeviceSession() {
   const deviceId = getDeviceId();
   await supabase.from('device_sessions').update({
     room_code: null,
     last_active: new Date().toISOString(),
-  }).eq('user_id', userId).eq('device_id', deviceId);
+  }).eq('device_id', deviceId);
 }
 
 export default function Lobby() {
   const [, setLocation] = useLocation();
   const { playerInfo, setRoom } = useGameStore();
-  const { user, profile } = useAuth();
+  const { profile } = useDeviceIdentity();
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
 
   const createRoomMutation = useCreateRoom({
     mutation: {
       onSuccess: async (room) => {
-        if (user) {
-          const { ok, existingRoom } = await claimDeviceSession(user.id, room.code);
-          if (!ok) {
-            toast({
-              title: 'Already in a room',
-              description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
-              variant: 'destructive',
-            });
-            return;
-          }
+        const { ok, existingRoom } = await claimDeviceSession(room.code);
+        if (!ok) {
+          toast({
+            title: 'Already in a room',
+            description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
+            variant: 'destructive',
+          });
+          return;
         }
         setRoom(room);
         setLocation(`/room/${room.code}`);
@@ -78,16 +73,14 @@ export default function Lobby() {
   const joinRoomMutation = useJoinRoom({
     mutation: {
       onSuccess: async (room) => {
-        if (user) {
-          const { ok, existingRoom } = await claimDeviceSession(user.id, room.code);
-          if (!ok) {
-            toast({
-              title: 'Already in a room',
-              description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
-              variant: 'destructive',
-            });
-            return;
-          }
+        const { ok, existingRoom } = await claimDeviceSession(room.code);
+        if (!ok) {
+          toast({
+            title: 'Already in a room',
+            description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
+            variant: 'destructive',
+          });
+          return;
         }
         setRoom(room);
         setLocation(`/room/${room.code}`);
@@ -115,7 +108,6 @@ export default function Lobby() {
   return (
     <LayoutWrapper>
       <div className="flex-1 flex flex-col p-6">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="w-10 h-10" />
           <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full">
@@ -131,7 +123,6 @@ export default function Lobby() {
         </div>
 
         <div className="flex-1 flex flex-col justify-center space-y-8">
-          {/* Create room */}
           <div className="glass-card rounded-3xl p-6 text-center space-y-4 relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-400/50 rounded-full blur-2xl" />
             <h2 className="text-2xl font-display font-bold text-white relative z-10">Start a Game</h2>
@@ -149,7 +140,6 @@ export default function Lobby() {
             <div className="flex-grow border-t border-white/20" />
           </div>
 
-          {/* Join room */}
           <div className="glass-card rounded-3xl p-6 text-center space-y-4">
             <h2 className="text-2xl font-display font-bold text-white">Join a Game</h2>
             <p className="text-white/80 text-sm">Enter the 4-letter code from your partner.</p>

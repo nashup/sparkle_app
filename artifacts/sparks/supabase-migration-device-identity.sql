@@ -1,13 +1,18 @@
 -- ============================================================
--- Sparks App — Supabase Database Setup (Device Identity)
--- Run this in your Supabase project: SQL Editor > New Query
+-- Sparks: Device Identity Migration
+-- Run this in the Supabase SQL Editor (Dashboard → SQL Editor)
 -- ============================================================
--- No auth.users dependency. Players are identified by a UUID
--- stored in localStorage (device_id).
+-- Drops auth-based tables and recreates them keyed on device_id.
+-- RLS is disabled — the anon key is safe because the only secret
+-- is the device UUID stored in the user's own localStorage.
 -- ============================================================
 
--- 1. PROFILES TABLE
-CREATE TABLE IF NOT EXISTS public.profiles (
+-- 1. Drop old tables (in dependency order)
+DROP TABLE IF EXISTS device_sessions CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+
+-- 2. Profiles — keyed on device_id (no auth.users FK)
+CREATE TABLE profiles (
   device_id          text        PRIMARY KEY,
   first_name         text        NOT NULL DEFAULT '',
   last_name          text        NOT NULL DEFAULT '',
@@ -21,18 +26,18 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
--- 2. DEVICE SESSIONS TABLE
-CREATE TABLE IF NOT EXISTS public.device_sessions (
+-- 3. Device sessions — keyed on device_id
+CREATE TABLE device_sessions (
   device_id   text        PRIMARY KEY,
   room_code   text,
   last_active timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE public.device_sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE device_sessions DISABLE ROW LEVEL SECURITY;
 
--- 3. Convenience function — clean up idle sessions (30-min default)
+-- 4. Convenience function — clean up idle sessions
 CREATE OR REPLACE FUNCTION cleanup_idle_sessions(timeout_minutes int DEFAULT 30)
 RETURNS void LANGUAGE sql AS $$
   DELETE FROM device_sessions

@@ -4,11 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { WsProvider } from '@/hooks/ws-context';
-import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { DeviceIdentityProvider, useDeviceIdentity } from '@/hooks/use-device-identity';
 import { PrivacyPopup } from '@/components/privacy-popup';
 import { useGameStore } from '@/store/use-game-store';
 
-import Auth from './pages/auth';
 import ProfileSetup from './pages/profile-setup';
 import Profile from './pages/profile';
 import PrivacyPolicyPage from './pages/privacy-policy';
@@ -21,43 +20,33 @@ import { Loader2 } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
-const PUBLIC_PATHS = ['/auth', '/privacy-policy'];
-
 function AppRoutes() {
-  const { isLoading, isAuthenticated, isProfileComplete, profile } = useAuth();
+  const { isLoading, isProfileComplete, profile, deviceId } = useDeviceIdentity();
   const { setPlayerInfo } = useGameStore();
   const [location, setLocation] = useLocation();
 
-  // Sync auth profile into game store
   useEffect(() => {
     if (profile) {
       setPlayerInfo({
-        playerId: profile.id,
+        playerId: deviceId,
         username: profile.username,
         avatar: profile.avatar,
         birthYear: profile.birth_year ?? undefined,
       });
     }
-  }, [profile, setPlayerInfo]);
+  }, [profile, deviceId, setPlayerInfo]);
 
-  // Auth guard routing
   useEffect(() => {
     if (isLoading) return;
-    const isPublic = PUBLIC_PATHS.some(p => location.startsWith(p));
-
-    if (!isAuthenticated && !isPublic) {
-      setLocation('/auth');
-      return;
-    }
-    if (isAuthenticated && !isProfileComplete && location !== '/profile-setup' && !isPublic) {
+    if (!isProfileComplete && location !== '/profile-setup' && !location.startsWith('/privacy-policy')) {
       setLocation('/profile-setup');
       return;
     }
-    if (isAuthenticated && isProfileComplete && (location === '/auth' || location === '/' || location === '/profile-setup')) {
+    if (isProfileComplete && (location === '/' || location === '/profile-setup')) {
       setLocation('/lobby');
       return;
     }
-  }, [isLoading, isAuthenticated, isProfileComplete, location, setLocation]);
+  }, [isLoading, isProfileComplete, location, setLocation]);
 
   if (isLoading) {
     return (
@@ -74,7 +63,6 @@ function AppRoutes() {
   return (
     <>
       <Switch>
-        <Route path="/auth" component={Auth} />
         <Route path="/profile-setup" component={ProfileSetup} />
         <Route path="/profile" component={Profile} />
         <Route path="/privacy-policy" component={PrivacyPolicyPage} />
@@ -85,8 +73,7 @@ function AppRoutes() {
         <Route component={NotFound} />
       </Switch>
 
-      {/* Privacy popup — shown once after profile setup until accepted */}
-      {isAuthenticated && isProfileComplete && profile && !profile.privacy_accepted && (
+      {isProfileComplete && profile && !profile.privacy_accepted && (
         <PrivacyPopup onAccepted={() => {}} />
       )}
     </>
@@ -98,11 +85,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <AuthProvider>
+          <DeviceIdentityProvider>
             <WsProvider>
               <AppRoutes />
             </WsProvider>
-          </AuthProvider>
+          </DeviceIdentityProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

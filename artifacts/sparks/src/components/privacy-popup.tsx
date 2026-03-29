@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/hooks/use-auth';
+import { useDeviceIdentity } from '@/hooks/use-device-identity';
 import { supabase } from '@/lib/supabase';
 import { Shield } from 'lucide-react';
 
@@ -9,16 +9,15 @@ interface PrivacyPopupProps {
 }
 
 export function PrivacyPopup({ onAccepted }: PrivacyPopupProps) {
-  const { user, refreshProfile } = useAuth();
+  const { deviceId, refreshProfile } = useDeviceIdentity();
   const [loading, setLoading] = useState(false);
 
   const handleAccept = async () => {
-    if (!user) return;
     setLoading(true);
     await supabase.from('profiles').update({
       privacy_accepted: true,
       privacy_accepted_at: new Date().toISOString(),
-    }).eq('id', user.id);
+    }).eq('device_id', deviceId);
     await refreshProfile();
     setLoading(false);
     onAccepted();
@@ -50,19 +49,19 @@ export function PrivacyPopup({ onAccepted }: PrivacyPopupProps) {
             </div>
 
             <p className="text-white/70 text-sm leading-relaxed">
-              We use cookies to keep you signed in and make the app work smoothly.
+              We use a local device ID to keep your profile and make the app work smoothly.
             </p>
 
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
               <p className="text-white/80 text-sm leading-relaxed">
-                <span className="text-green-400 font-semibold">Your privacy matters.</span> We store only your profile and account info. <span className="font-semibold text-white">We never store, log, or share anything that happens inside game rooms</span> — your questions, answers, and chat are never saved to our servers.
+                <span className="text-green-400 font-semibold">Your privacy matters.</span> We store only your profile info. <span className="font-semibold text-white">We never store, log, or share anything that happens inside game rooms</span> — your questions, answers, and chat are never saved to our servers.
               </p>
             </div>
 
             <p className="text-white/50 text-xs leading-relaxed">
               By continuing you agree to our{' '}
               <a
-                href="/privacy-policy"
+                href={`${import.meta.env.BASE_URL}privacy-policy`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-pink-400 underline hover:text-pink-300 transition-colors"

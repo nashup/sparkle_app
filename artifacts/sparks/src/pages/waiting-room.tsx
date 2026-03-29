@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useAuth } from '@/hooks/use-auth';
 import { clearDeviceSession } from '@/pages/lobby';
 import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
+import { supabase } from '@/lib/supabase';
+import { getDeviceId } from '@/lib/device';
+import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { Button } from '@/components/ui/button';
 import { Copy, Play, Lock, Flame, LogOut } from 'lucide-react';
@@ -15,24 +17,34 @@ export default function WaitingRoom() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, isAdult, leaveRoom } = useGameStore();
-  const { user } = useAuth();
   const { toast } = useToast();
 
   const handleLeave = async () => {
-    if (user) await clearDeviceSession(user.id);
+    await clearDeviceSession();
     leaveRoom();
     setLocation('/lobby');
   };
-  
+
   const { isConnected, joinRoom } = useWs();
 
   useEffect(() => {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
 
+  // Heartbeat — keep device session alive
+  useEffect(() => {
+    if (!code) return;
+    const deviceId = getDeviceId();
+    const tick = () => supabase.from('device_sessions').update({
+      last_active: new Date().toISOString(),
+    }).eq('device_id', deviceId);
+    tick();
+    const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [code]);
+
   const updateStateMutation = useUpdateGameState();
 
-  // Watch for game start
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
       setLocation(`/game/${code}`);
@@ -66,15 +78,11 @@ export default function WaitingRoom() {
       });
       return;
     }
-    
     updateStateMutation.mutate({
       code,
       data: {
         playerId: playerInfo.playerId,
-        gameState: {
-          ...currentRoom.gameState,
-          intimacyLevel: level
-        }
+        gameState: { ...currentRoom.gameState, intimacyLevel: level }
       }
     });
   };
@@ -84,10 +92,7 @@ export default function WaitingRoom() {
       code,
       data: {
         playerId: playerInfo.playerId,
-        gameState: {
-          ...currentRoom.gameState,
-          gameType: type
-        }
+        gameState: { ...currentRoom.gameState, gameType: type }
       }
     });
   };
@@ -98,10 +103,9 @@ export default function WaitingRoom() {
       return;
     }
     if (!partner) {
-       toast({ title: "Wait for partner to join", variant: "destructive" });
-       return;
+      toast({ title: "Wait for partner to join", variant: "destructive" });
+      return;
     }
-    
     updateStateMutation.mutate({
       code,
       data: {
@@ -109,7 +113,7 @@ export default function WaitingRoom() {
         gameState: {
           ...currentRoom.gameState,
           phase: 'playing',
-          currentTurn: currentRoom.players[0].id // Host goes first
+          currentTurn: currentRoom.players[0].id
         }
       }
     });
@@ -126,7 +130,7 @@ export default function WaitingRoom() {
       <div className="flex-1 flex flex-col p-6 h-full overflow-y-auto hide-scrollbar">
         <div className="text-center mb-6">
           <p className="text-white/60 text-sm font-medium uppercase tracking-widest mb-1">Room Code</p>
-          <div 
+          <div
             onClick={handleCopy}
             className="inline-flex items-center gap-3 bg-white/10 hover:bg-white/20 transition-colors px-6 py-2 rounded-2xl cursor-pointer backdrop-blur-sm border border-white/20"
           >
@@ -142,9 +146,9 @@ export default function WaitingRoom() {
             <span className="text-white font-bold truncate w-full text-center">{playerInfo.username}</span>
             <span className="text-xs text-white/50 mt-1">You</span>
           </div>
-          
+
           <div className="text-white/30 text-2xl font-bold font-display">VS</div>
-          
+
           <div className={`flex-1 rounded-2xl p-4 flex flex-col items-center justify-center border border-dashed transition-all ${partner ? 'glass-card border-solid border-white/30' : 'bg-black/20 border-white/20'}`}>
             {partner ? (
               <>
@@ -161,7 +165,6 @@ export default function WaitingRoom() {
           </div>
         </div>
 
-        {/* Settings Area */}
         <div className="space-y-6 flex-1">
           <div className="space-y-3">
             <div className="flex justify-between items-end">
@@ -170,26 +173,20 @@ export default function WaitingRoom() {
                 Level {currentRoom.gameState.intimacyLevel} <Flame className="w-4 h-4 text-orange-400" />
               </span>
             </div>
-            
             <div className="glass-panel rounded-2xl p-2 flex gap-2">
               {[1, 2, 3, 4].map((level) => {
                 const isActive = currentRoom.gameState.intimacyLevel === level;
                 const isLocked = (level === 3 || level === 4) && !isAdult();
-                
                 return (
                   <button
                     key={level}
                     disabled={!isHost}
                     onClick={() => setLevel(level)}
-                    className={`flex-1 py-3 rounded-xl flex flex-col items-center justify-center transition-all ${
-                      isActive 
-                        ? 'bg-gradient-primary text-white shadow-lg' 
-                        : 'bg-transparent text-white/60 hover:bg-white/10'
-                    } ${!isHost ? 'cursor-default' : 'cursor-pointer'}`}
+                    className={`flex-1 py-3 rounded-xl flex flex-col items-center justify-center transition-all ${isActive ? 'bg-gradient-primary text-white shadow-lg' : 'bg-transparent text-white/60 hover:bg-white/10'} ${!isHost ? 'cursor-default' : 'cursor-pointer'}`}
                   >
                     {isLocked ? <Lock className="w-5 h-5 mb-1 opacity-50" /> : <span className="font-bold">{level}</span>}
                   </button>
-                )
+                );
               })}
             </div>
           </div>
@@ -202,16 +199,10 @@ export default function WaitingRoom() {
                   key={type.id}
                   disabled={!isHost}
                   onClick={() => setType(type.id)}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all ${
-                    currentRoom.gameState.gameType === type.id
-                      ? 'bg-white/20 border-white/50 shadow-md backdrop-blur-md'
-                      : 'bg-black/20 border-white/10 hover:bg-white/10'
-                  } ${!isHost && 'cursor-default'}`}
+                  className={`w-full text-left p-4 rounded-2xl border transition-all ${currentRoom.gameState.gameType === type.id ? 'bg-white/20 border-white/50 shadow-md backdrop-blur-md' : 'bg-black/20 border-white/10 hover:bg-white/10'} ${!isHost && 'cursor-default'}`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                       currentRoom.gameState.gameType === type.id ? 'border-primary' : 'border-white/30'
-                    }`}>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${currentRoom.gameState.gameType === type.id ? 'border-primary' : 'border-white/30'}`}>
                       {currentRoom.gameState.gameType === type.id && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
                     </div>
                     <div>
@@ -227,14 +218,14 @@ export default function WaitingRoom() {
 
         <div className="mt-8 pt-4 space-y-3">
           {isHost ? (
-            <Button 
-              className="w-full" 
-              size="lg" 
+            <Button
+              className="w-full"
+              size="lg"
               variant="primary"
               onClick={startGame}
               disabled={!partner || !currentRoom.gameState.gameType || updateStateMutation.isPending}
             >
-              <Play className="mr-2 w-5 h-5 fill-current" /> 
+              <Play className="mr-2 w-5 h-5 fill-current" />
               Start Game
             </Button>
           ) : (

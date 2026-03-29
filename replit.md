@@ -21,6 +21,16 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 
 A colorful, mobile-first couples/flirty game app for two users in different locations.
 
+### Identity System
+- **No authentication.** Player identity = a UUID (`sparks_device_id`) stored in localStorage.
+- `lib/device.ts` — `getDeviceId()` creates/retrieves the device UUID.
+- `hooks/use-device-identity.tsx` — React context exposing `deviceId`, `profile`, `isLoading`, `isProfileComplete`, `refreshProfile`, `resetProfile`.
+- `lib/session.ts` — shared constants: `SESSION_TIMEOUT_MS` (30 min), `HEARTBEAT_INTERVAL_MS` (60 s).
+- Supabase `profiles` table is keyed on `device_id text PRIMARY KEY` (no `auth.users` FK).
+- Supabase `device_sessions` table is keyed on `device_id text PRIMARY KEY`, RLS disabled.
+- Heartbeat pings `last_active` every 60 s from waiting-room and results pages.
+- `supabase-setup.sql` — fresh install SQL. `supabase-migration-device-identity.sql` — migration from old auth-based schema.
+
 ### Features
 - Username + emoji avatar selection (12 avatars)
 - Age verification for intimacy Levels 3 & 4 (18+)

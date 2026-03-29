@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { useAuth } from '@/hooks/use-auth';
+import { useDeviceIdentity } from '@/hooks/use-device-identity';
 import { supabase } from '@/lib/supabase';
 import { useGameStore } from '@/store/use-game-store';
 import { AVATARS } from '@/data/questions';
@@ -12,7 +12,7 @@ import { ArrowRight, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 
 export default function ProfileSetup() {
-  const { user, refreshProfile } = useAuth();
+  const { deviceId, refreshProfile } = useDeviceIdentity();
   const [, setLocation] = useLocation();
   const { setPlayerInfo } = useGameStore();
 
@@ -22,28 +22,9 @@ export default function ProfileSetup() {
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [birthYear, setBirthYear] = useState('');
-  const [birthYearLocked, setBirthYearLocked] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!user) return;
-    const meta = user.user_metadata || {};
-    if (meta.full_name || meta.name) {
-      const parts = (meta.full_name || meta.name || '').split(' ');
-      setFirstName(meta.given_name || parts[0] || '');
-      setLastName(meta.family_name || parts.slice(1).join(' ') || '');
-    }
-    if (meta.first_name) setFirstName(meta.first_name);
-    if (meta.last_name) setLastName(meta.last_name);
-
-    // Check if birth year came from Google (some providers include birthdate)
-    if (meta.birth_year) {
-      setBirthYear(String(meta.birth_year));
-      setBirthYearLocked(true);
-    }
-  }, [user]);
 
   const checkUsername = useCallback(async (val: string) => {
     const cleaned = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
@@ -54,10 +35,10 @@ export default function ProfileSetup() {
       .from('profiles')
       .select('username')
       .eq('username', val)
-      .neq('id', user?.id ?? '')
+      .neq('device_id', deviceId)
       .single();
     setUsernameStatus(data ? 'taken' : 'ok');
-  }, [user?.id]);
+  }, [deviceId]);
 
   useEffect(() => {
     if (username.length < 3) { setUsernameStatus('idle'); return; }
@@ -66,7 +47,6 @@ export default function ProfileSetup() {
   }, [username, checkUsername]);
 
   const handleSave = async () => {
-    if (!user) return;
     const year = parseInt(birthYear);
     if (!firstName.trim() || !lastName.trim()) { setError('Please enter your full name.'); return; }
     if (usernameStatus !== 'ok') { setError('Please choose a valid, available username.'); return; }
@@ -75,19 +55,17 @@ export default function ProfileSetup() {
     setError('');
     try {
       const { error: err } = await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
+        device_id: deviceId,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         username: username.trim(),
         avatar,
         birth_year: year,
-        birth_year_locked: birthYearLocked,
+        birth_year_locked: false,
         updated_at: new Date().toISOString(),
       });
       if (err) throw err;
-      // Sync to local game store and refresh auth context
-      setPlayerInfo({ playerId: user.id, username: username.trim(), avatar, birthYear: year });
+      setPlayerInfo({ playerId: deviceId, username: username.trim(), avatar, birthYear: year });
       await refreshProfile();
       setLocation('/lobby');
     } catch (err: any) {
@@ -116,7 +94,6 @@ export default function ProfileSetup() {
           <h1 className="text-2xl font-black text-white text-center">Set Up Your Profile</h1>
           <p className="text-white/60 text-sm text-center mb-6">Just once — saved forever.</p>
 
-          {/* Step dots */}
           <div className="flex justify-center gap-2 mb-6">
             {[1, 2, 3, 4].map(s => (
               <div key={s} className={`h-2 rounded-full transition-all duration-300 ${step === s ? 'w-6 bg-white' : s < step ? 'w-2 bg-white/60' : 'w-2 bg-white/20'}`} />
@@ -124,7 +101,6 @@ export default function ProfileSetup() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Step 1: Name */}
             {step === 1 && (
               <motion.div key="s1" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="glass-card rounded-3xl p-6 space-y-4">
@@ -147,7 +123,6 @@ export default function ProfileSetup() {
               </motion.div>
             )}
 
-            {/* Step 2: Username */}
             {step === 2 && (
               <motion.div key="s2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="glass-card rounded-3xl p-6 space-y-4">
@@ -172,7 +147,6 @@ export default function ProfileSetup() {
               </motion.div>
             )}
 
-            {/* Step 3: Avatar */}
             {step === 3 && (
               <motion.div key="s3" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="glass-card rounded-3xl p-6 space-y-4">
@@ -194,15 +168,14 @@ export default function ProfileSetup() {
               </motion.div>
             )}
 
-            {/* Step 4: Birth Year */}
             {step === 4 && (
               <motion.div key="s4" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 className="glass-card rounded-3xl p-6 space-y-4">
                 <Label className="text-white font-bold text-lg block">Year of birth</Label>
-                <p className="text-white/50 text-xs">Used to unlock spicy levels (18+).{birthYearLocked && ' Locked from your account.'}</p>
-                <Input type="number" value={birthYear} onChange={e => !birthYearLocked && setBirthYear(e.target.value.slice(0, 4))}
-                  placeholder="YYYY" disabled={birthYearLocked}
-                  className="h-14 bg-black/20 border-white/20 text-white placeholder:text-white/30 rounded-2xl text-center text-2xl font-bold tracking-widest disabled:opacity-60 disabled:cursor-not-allowed" />
+                <p className="text-white/50 text-xs">Used to unlock spicy levels (18+).</p>
+                <Input type="number" value={birthYear} onChange={e => setBirthYear(e.target.value.slice(0, 4))}
+                  placeholder="YYYY"
+                  className="h-14 bg-black/20 border-white/20 text-white placeholder:text-white/30 rounded-2xl text-center text-2xl font-bold tracking-widest" />
                 {error && <p className="text-red-300 text-xs text-center">{error}</p>}
                 <div className="flex gap-2">
                   <Button variant="secondary" size="lg" onClick={() => setStep(3)} className="flex-1" disabled={saving}>Back</Button>

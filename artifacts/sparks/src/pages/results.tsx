@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useAuth } from '@/hooks/use-auth';
 import { clearDeviceSession } from '@/pages/lobby';
 import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
+import { supabase } from '@/lib/supabase';
+import { getDeviceId } from '@/lib/device';
+import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
 import { Button } from '@/components/ui/button';
@@ -19,7 +21,6 @@ export default function Results() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions, leaveRoom } = useGameStore();
-  const { user } = useAuth();
   const { sendChat: wsSendChat, sendReaction: wsSendReaction, setChatOpen, joinRoom } = useWs();
   const sendChat = (text: string) => wsSendChat(text, code || '');
   const sendReaction = (emoji: string) => wsSendReaction(emoji, code || '');
@@ -27,8 +28,20 @@ export default function Results() {
   useEffect(() => {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
-  const updateStateMutation = useUpdateGameState();
 
+  // Heartbeat — keep device session alive
+  useEffect(() => {
+    if (!code) return;
+    const deviceId = getDeviceId();
+    const tick = () => supabase.from('device_sessions').update({
+      last_active: new Date().toISOString(),
+    }).eq('device_id', deviceId);
+    tick();
+    const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [code]);
+
+  const updateStateMutation = useUpdateGameState();
   const [sentReactions, setSentReactions] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -53,7 +66,6 @@ export default function Results() {
   const partnerAnswer = partner ? currentRoom.gameState.answers[partner.id] || '…waiting' : '…';
   const isHost = currentRoom.players[0]?.id === playerInfo.playerId;
 
-  // Check if next round would exceed questions
   const totalQuestions = currentRoom.gameState.gameType
     ? getQuestionsForGame(
         currentRoom.gameState.gameType as Question['type'],
@@ -82,7 +94,7 @@ export default function Results() {
 
   const handleLevelComplete = async () => {
     confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-    if (user) await clearDeviceSession(user.id);
+    await clearDeviceSession();
     leaveRoom();
     setLocation('/lobby');
   };
@@ -107,8 +119,6 @@ export default function Results() {
         )}
 
         <div className="flex flex-col gap-4 mt-4">
-
-          {/* My answer */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -124,7 +134,6 @@ export default function Results() {
             </div>
           </motion.div>
 
-          {/* Partner answer */}
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
@@ -140,7 +149,6 @@ export default function Results() {
             </div>
           </motion.div>
 
-          {/* Emoji reactions */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -164,7 +172,6 @@ export default function Results() {
           </motion.div>
         </div>
 
-        {/* Floating reactions display */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <AnimatePresence>
             {floatingReactions.map(r => (
@@ -183,7 +190,6 @@ export default function Results() {
           </AnimatePresence>
         </div>
 
-        {/* Buttons */}
         <div className="mt-6 space-y-3 flex-shrink-0 pb-4">
           {isHost ? (
             <>

@@ -5,15 +5,14 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
   },
 });
 
 export type Profile = {
-  id: string;
-  email: string | null;
+  device_id: string;
   first_name: string;
   last_name: string;
   username: string;
@@ -27,8 +26,6 @@ export type Profile = {
 };
 
 export type DeviceSession = {
-  id: string;
-  user_id: string;
   device_id: string;
   room_code: string | null;
   last_active: string;
