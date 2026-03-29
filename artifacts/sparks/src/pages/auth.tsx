@@ -45,11 +45,25 @@ export default function Auth() {
   };
 
   const handleGoogle = async () => {
+    // IMPORTANT — Supabase dashboard setup required:
+    // In Supabase > Authentication > URL Configuration > Additional Redirect URLs,
+    // add the exact URL this app runs at, e.g.:
+    //   https://<your-replit-dev-domain>/sparks/
+    //   https://<your-replit-app-domain>/sparks/
+    // Without this, Supabase will reject the OAuth callback and the session
+    // will never be established (app stays on the loading spinner).
+    const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`;
+
+    if (import.meta.env.DEV) {
+      console.info('[Sparks] Google OAuth redirectTo:', redirectTo,
+        '\nMake sure this URL is added to Supabase > Auth > URL Configuration > Additional Redirect URLs');
+    }
+
     setGoogleLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+        redirectTo,
         queryParams: { access_type: 'offline', prompt: 'consent' },
         scopes: 'openid email profile',
       },
@@ -202,7 +216,7 @@ export default function Auth() {
 
         <p className="text-center text-white/40 text-xs mt-4">
           By continuing, you agree to our{' '}
-          <a href="/privacy-policy" className="text-white/70 underline hover:text-white">Privacy Policy</a>
+          <a href={`${import.meta.env.BASE_URL}privacy-policy`} className="text-white/70 underline hover:text-white">Privacy Policy</a>
         </p>
       </div>
     </div>

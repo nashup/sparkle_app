@@ -30,14 +30,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    if (error || !data) return null;
-    return data as Profile;
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      if (error || !data) return null;
+      return data as Profile;
+    } catch {
+      return null;
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -47,30 +51,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, fetchProfile]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id).then(p => {
-          setProfile(p);
+    // Supabase v2: onAuthStateChange fires INITIAL_SESSION as its very first
+    // event with the current session (including after an OAuth redirect).
+    // Using getSession() alongside it creates a race condition and double
+    // fetchProfile() calls. We rely solely on onAuthStateChange here.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        try {
+          setSession(session);
+          setUser(session?.user ?? null);
+          if (session?.user) {
+            const p = await fetchProfile(session.user.id);
+            setProfile(p);
+          } else {
+            setProfile(null);
+          }
+        } catch {
+          // Safety net: ensure we always exit the loading state, even on error.
+        } finally {
           setIsLoading(false);
-        });
-      } else {
-        setIsLoading(false);
+        }
       }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const p = await fetchProfile(session.user.id);
-        setProfile(p);
-      } else {
-        setProfile(null);
-      }
-      setIsLoading(false);
-    });
+    );
 
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
