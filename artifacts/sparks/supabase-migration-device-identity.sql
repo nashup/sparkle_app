@@ -7,7 +7,9 @@
 -- is the device UUID stored in the user's own localStorage.
 -- ============================================================
 
--- 1. Drop old tables (in dependency order)
+-- 1. Drop old auth trigger/function and tables (in dependency order)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
 DROP TABLE IF EXISTS device_sessions CASCADE;
 DROP TABLE IF EXISTS profiles CASCADE;
 
@@ -41,5 +43,6 @@ ALTER TABLE device_sessions DISABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION cleanup_idle_sessions(timeout_minutes int DEFAULT 30)
 RETURNS void LANGUAGE sql AS $$
   DELETE FROM device_sessions
-  WHERE last_active < now() - (timeout_minutes || ' minutes')::interval;
+  WHERE room_code IS NOT NULL
+    AND last_active < now() - (timeout_minutes || ' minutes')::interval;
 $$;

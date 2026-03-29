@@ -38,6 +38,11 @@ function AppRoutes() {
 
   useEffect(() => {
     if (isLoading) return;
+    // Legacy /auth route — always redirect away
+    if (location === '/auth') {
+      setLocation(isProfileComplete ? '/lobby' : '/profile-setup');
+      return;
+    }
     if (!isProfileComplete && location !== '/profile-setup' && !location.startsWith('/privacy-policy')) {
       setLocation('/profile-setup');
       return;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { useDeviceIdentity } from '@/hooks/use-device-identity';
@@ -48,6 +48,15 @@ export default function Lobby() {
   const { profile } = useDeviceIdentity();
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
+
+  // On lobby mount, clear any stale room_code for this device
+  useEffect(() => {
+    const deviceId = getDeviceId();
+    supabase.from('device_sessions').update({
+      room_code: null,
+      last_active: new Date().toISOString(),
+    }).eq('device_id', deviceId).then(() => {});
+  }, []);
 
   const createRoomMutation = useCreateRoom({
     mutation: {

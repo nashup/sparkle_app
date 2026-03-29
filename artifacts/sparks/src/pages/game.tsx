@@ -3,6 +3,9 @@ import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { useWs } from '@/hooks/ws-context';
 import { useUpdateGameState } from '@workspace/api-client-react';
+import { supabase } from '@/lib/supabase';
+import { getDeviceId } from '@/lib/device';
+import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
 import { getQuestionsForGame, Question } from '@/data/questions';
@@ -21,6 +24,19 @@ export default function Game() {
   useEffect(() => {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
+
+  // Heartbeat — keep device session alive while in game
+  useEffect(() => {
+    if (!code) return;
+    const deviceId = getDeviceId();
+    const tick = () => supabase.from('device_sessions').update({
+      last_active: new Date().toISOString(),
+    }).eq('device_id', deviceId);
+    tick();
+    const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [code]);
+
   const updateStateMutation = useUpdateGameState();
 
   const [answer, setAnswer] = useState('');

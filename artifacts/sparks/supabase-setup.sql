@@ -36,5 +36,6 @@ ALTER TABLE public.device_sessions DISABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION cleanup_idle_sessions(timeout_minutes int DEFAULT 30)
 RETURNS void LANGUAGE sql AS $$
   DELETE FROM device_sessions
-  WHERE last_active < now() - (timeout_minutes || ' minutes')::interval;
+  WHERE room_code IS NOT NULL
+    AND last_active < now() - (timeout_minutes || ' minutes')::interval;
 $$;
