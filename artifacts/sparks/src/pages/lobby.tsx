@@ -4,7 +4,7 @@ import { useGameStore } from '@/store/use-game-store';
 import { useDeviceIdentity } from '@/hooks/use-device-identity';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
-import { SESSION_TIMEOUT_MS } from '@/lib/session';
+import { SESSION_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { useCreateRoom, useJoinRoom } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,10 +49,11 @@ export default function Lobby() {
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
 
-  // On lobby mount, clear room_code only if the session is stale (past timeout)
+  // On lobby mount: release stale sessions, then ping last_active periodically
   useEffect(() => {
     const deviceId = getDeviceId();
     const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
+    // Clear room_code only if the existing session is past the inactivity timeout
     supabase.from('device_sessions').update({
       room_code: null,
       last_active: new Date().toISOString(),
@@ -60,6 +61,15 @@ export default function Lobby() {
       .eq('device_id', deviceId)
       .lt('last_active', cutoff)
       .then(() => {});
+
+    // Periodic ping so a device idling on the lobby doesn't get falsely timed out
+    const interval = setInterval(() => {
+      supabase.from('device_sessions').update({
+        last_active: new Date().toISOString(),
+      }).eq('device_id', deviceId).then(() => {});
+    }, HEARTBEAT_INTERVAL_MS);
+
+    return () => clearInterval(interval);
   }, []);
 
   const createRoomMutation = useCreateRoom({

@@ -25,22 +25,19 @@ export default function Game() {
     if (code) joinRoom(code);
   }, [code, joinRoom]);
 
-  // Heartbeat — keep device session alive; release room on unmount
+  // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
+  // Upsert is self-healing: mid-route unmounts won't break the lock.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
-    const tick = () => supabase.from('device_sessions').update({
+    const tick = () => supabase.from('device_sessions').upsert({
+      device_id: deviceId,
+      room_code: code,
       last_active: new Date().toISOString(),
-    }).eq('device_id', deviceId);
+    }, { onConflict: 'device_id' });
     tick();
     const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
-    return () => {
-      clearInterval(interval);
-      supabase.from('device_sessions').update({
-        room_code: null,
-        last_active: new Date().toISOString(),
-      }).eq('device_id', deviceId).then(() => {});
-    };
+    return () => clearInterval(interval);
   }, [code]);
 
   const updateStateMutation = useUpdateGameState();
