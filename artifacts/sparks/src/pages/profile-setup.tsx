@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/lib/supabase';
 import { useGameStore } from '@/store/use-game-store';
@@ -12,6 +13,7 @@ import { LayoutWrapper } from '@/components/layout-wrapper';
 
 export default function ProfileSetup() {
   const { user, refreshProfile } = useAuth();
+  const [, setLocation] = useLocation();
   const { setPlayerInfo } = useGameStore();
 
   const [step, setStep] = useState(1);
@@ -84,9 +86,10 @@ export default function ProfileSetup() {
         updated_at: new Date().toISOString(),
       });
       if (err) throw err;
-      // Sync to local game store
+      // Sync to local game store and refresh auth context
       setPlayerInfo({ playerId: user.id, username: username.trim(), avatar, birthYear: year });
       await refreshProfile();
+      setLocation('/lobby');
     } catch (err: any) {
       setError(err.message || 'Failed to save profile.');
     } finally {

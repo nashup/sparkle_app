@@ -55,8 +55,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // event with the current session (including after an OAuth redirect).
     // Using getSession() alongside it creates a race condition and double
     // fetchProfile() calls. We rely solely on onAuthStateChange here.
+
+    // Absolute fallback: force-clear the loading state after 8 s in case
+    // INITIAL_SESSION never fires (corrupted localStorage, network error, etc.).
+    const fallbackTimer = setTimeout(() => setIsLoading(false), 8000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        clearTimeout(fallbackTimer);
         try {
           setSession(session);
           setUser(session?.user ?? null);
@@ -74,7 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(fallbackTimer);
+      subscription.unsubscribe();
+    };
   }, [fetchProfile]);
 
   const signOut = useCallback(async () => {

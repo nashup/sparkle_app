@@ -53,7 +53,7 @@ function AppRoutes() {
       setLocation('/profile-setup');
       return;
     }
-    if (isAuthenticated && isProfileComplete && (location === '/auth' || location === '/')) {
+    if (isAuthenticated && isProfileComplete && (location === '/auth' || location === '/' || location === '/profile-setup')) {
       setLocation('/lobby');
       return;
     }
