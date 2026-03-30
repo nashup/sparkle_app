@@ -2,37 +2,32 @@ import { useEffect, useState, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { clearDeviceSession } from '@/pages/lobby';
-import { useWs } from '@/hooks/ws-context';
-import { useUpdateGameState } from '@workspace/api-client-react';
+import { useRoom } from '@/hooks/use-room';
+import { updateGameState } from '@/lib/rooms';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
 import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
 import { Button } from '@/components/ui/button';
-import { getQuestionsForGame, Question } from '@/data/questions';
-import { ArrowRight, RefreshCcw, Trophy } from 'lucide-react';
+import { Trophy, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 
+const QUESTIONS_PER_GAME = 10;
 const REACTIONS = ['❤️', '🔥', '😂', '🥵', '😳'];
 
 export default function Results() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions, leaveRoom } = useGameStore();
-  const { sendChat: wsSendChat, sendReaction: wsSendReaction, setChatOpen, joinRoom } = useWs();
-  const sendChat = (text: string) => wsSendChat(text, code || '');
-  const sendReaction = (emoji: string) => wsSendReaction(emoji, code || '');
-
-  useEffect(() => {
-    if (code) joinRoom(code);
-  }, [code, joinRoom]);
+  const { sendChat, sendReaction, setChatOpen } = useRoom(code);
+  const [sentReactions, setSentReactions] = useState<Record<string, number>>({});
+  const [partnerLeft, setPartnerLeft] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const internalTransitionRef = useRef(false);
 
-  // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
-  // Upsert is self-healing: mid-route unmounts won't break the lock.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -55,24 +50,49 @@ export default function Results() {
     };
   }, [code]);
 
-  const updateStateMutation = useUpdateGameState();
-  const [sentReactions, setSentReactions] = useState<Record<string, number>>({});
-
   useEffect(() => {
     confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.5 },
+      particleCount: 80, spread: 70, origin: { y: 0.5 },
       colors: ['#ff007f', '#7f00ff', '#ff7f00', '#ff69b4']
     });
   }, []);
 
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
-      internalTransitionRef.current = true; // internal — keep session locked
+      internalTransitionRef.current = true;
       setLocation(`/game/${code}`);
     }
+    if (currentRoom?.gameState?.phase === 'lobby') {
+      internalTransitionRef.current = true;
+      setLocation(`/room/${code}`);
+    }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
+
+  useEffect(() => {
+    if (!currentRoom || !code) return;
+    const partner = currentRoom.players.find(p => p.id !== playerInfo.playerId);
+    if (!partner) return;
+
+    const channel = supabase.channel(`partner-session-${partner.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'device_sessions',
+          filter: `device_id=eq.${partner.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as { room_code: string | null };
+          if (updated.room_code === null) {
+            setPartnerLeft(true);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentRoom, code, playerInfo.playerId]);
 
   if (!currentRoom) return null;
 
@@ -80,35 +100,47 @@ export default function Results() {
   const myAnswer = currentRoom.gameState.answers[playerInfo.playerId] || '…skipped';
   const partnerAnswer = partner ? currentRoom.gameState.answers[partner.id] || '…waiting' : '…';
   const isHost = currentRoom.players[0]?.id === playerInfo.playerId;
+  const isLevelComplete = currentRoom.gameState.currentCardIndex + 1 >= QUESTIONS_PER_GAME;
 
-  const totalQuestions = currentRoom.gameState.gameType
-    ? getQuestionsForGame(
-        currentRoom.gameState.gameType as Question['type'],
-        currentRoom.gameState.intimacyLevel,
-        code || ''
-      ).length
-    : 0;
-
-  const isLevelComplete = currentRoom.gameState.currentCardIndex + 1 >= totalQuestions;
-
-  const handleNextRound = () => {
-    updateStateMutation.mutate({
-      code: code!,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: {
-          ...currentRoom.gameState,
-          phase: 'playing',
-          currentCardIndex: currentRoom.gameState.currentCardIndex + 1,
-          answers: {},
-          currentTurn: partner?.id ?? null
-        }
-      }
-    });
+  const handleEndGame = async () => {
+    internalTransitionRef.current = true;
+    if (isLevelComplete) {
+      confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
+    }
+    setIsUpdating(true);
+    try {
+      await updateGameState(code!, {
+        ...currentRoom.gameState,
+        phase: 'lobby',
+        answers: {},
+        readyPlayers: [],
+        currentCardIndex: 0,
+        skipsUsed: 0,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleLevelComplete = async () => {
-    confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
+  const handleNextRound = async () => {
+    setIsUpdating(true);
+    internalTransitionRef.current = true;
+    try {
+      await updateGameState(code!, {
+        ...currentRoom.gameState,
+        phase: 'playing',
+        currentCardIndex: currentRoom.gameState.currentCardIndex + 1,
+        answers: {},
+        readyPlayers: [],
+        currentTurn: partner?.id ?? null,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    internalTransitionRef.current = true;
     await clearDeviceSession();
     leaveRoom();
     setLocation('/lobby');
@@ -123,10 +155,29 @@ export default function Results() {
     <LayoutWrapper>
       <div className="flex-1 flex flex-col p-5 h-full overflow-y-auto hide-scrollbar relative">
 
+        {partnerLeft && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card rounded-3xl p-8 text-center max-w-sm w-full space-y-4"
+            >
+              <div className="text-6xl">😢</div>
+              <h2 className="text-2xl font-black text-white">
+                {partner?.username || 'Your partner'} left the room
+              </h2>
+              <p className="text-white/60 text-sm">Looks like they had to go…</p>
+              <Button variant="primary" className="w-full" onClick={handleLeaveRoom}>
+                Return to Home
+              </Button>
+            </motion.div>
+          </div>
+        )}
+
         {isLevelComplete ? (
           <div className="flex flex-col items-center justify-center text-center py-6 gap-2">
             <Trophy className="w-10 h-10 text-yellow-400" />
-            <h2 className="text-3xl font-black text-white text-glow">Level Complete!</h2>
+            <h2 className="text-3xl font-black text-white text-glow">Game Complete!</h2>
             <p className="text-white/60 text-sm">You made it through all the questions 🎉</p>
           </div>
         ) : (
@@ -135,9 +186,7 @@ export default function Results() {
 
         <div className="flex flex-col gap-4 mt-4">
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
+            initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}
             className="glass-card rounded-3xl p-5 relative"
           >
             <div className="absolute -top-5 left-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-lg">
@@ -150,9 +199,7 @@ export default function Results() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2 }}
+            initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
             className="glass-card rounded-3xl p-5 relative"
           >
             <div className="absolute -top-5 right-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-lg">
@@ -165,9 +212,7 @@ export default function Results() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="glass-panel rounded-full py-2 px-3 flex justify-center gap-1"
           >
             {REACTIONS.map(emoji => (
@@ -209,34 +254,16 @@ export default function Results() {
           {isHost ? (
             <>
               {isLevelComplete ? (
-                <Button
-                  className="w-full"
-                  size="lg"
-                  variant="primary"
-                  onClick={handleLevelComplete}
-                  disabled={updateStateMutation.isPending}
-                >
-                  <Trophy className="mr-2 w-5 h-5" /> Back to Lobby
+                <Button className="w-full" size="lg" variant="primary" onClick={handleEndGame} disabled={isUpdating}>
+                  <Trophy className="mr-2 w-5 h-5" /> Play Again
                 </Button>
               ) : (
                 <>
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    variant="primary"
-                    onClick={handleNextRound}
-                    disabled={updateStateMutation.isPending}
-                  >
-                    Next Round <ArrowRight className="ml-2 w-5 h-5" />
+                  <Button className="w-full" size="lg" variant="primary" onClick={handleNextRound} disabled={isUpdating}>
+                    Next Question →
                   </Button>
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    variant="ghost"
-                    onClick={handleLevelComplete}
-                    disabled={updateStateMutation.isPending}
-                  >
-                    End Game <RefreshCcw className="ml-2 w-5 h-5" />
+                  <Button className="w-full" size="lg" variant="ghost" onClick={handleEndGame} disabled={isUpdating}>
+                    End Game
                   </Button>
                 </>
               )}
@@ -248,6 +275,13 @@ export default function Results() {
           )}
         </div>
       </div>
+
+      <button
+        onClick={handleLeaveRoom}
+        className="absolute bottom-20 right-4 z-10 flex items-center gap-1.5 text-white/50 hover:text-white/80 text-xs transition-colors bg-black/20 hover:bg-black/30 rounded-full px-3 py-1.5 backdrop-blur-sm"
+      >
+        <LogOut className="w-3.5 h-3.5" /> Leave Room
+      </button>
 
       <ChatPopup sendChat={sendChat} setChatOpen={setChatOpen} />
     </LayoutWrapper>

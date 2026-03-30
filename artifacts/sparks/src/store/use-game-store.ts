@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import type { Room } from '@workspace/api-client-react';
+import type { Room } from '@/lib/supabase';
 
 export interface ChatMessage {
   id: string;

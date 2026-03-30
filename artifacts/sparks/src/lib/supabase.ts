@@ -24,3 +24,29 @@ export type DeviceSession = {
   room_code: string | null;
   last_active: string;
 };
+
+export type Player = {
+  id: string;
+  username: string;
+  avatar: string;
+  isReady: boolean;
+};
+
+export type GameState = {
+  phase: 'lobby' | 'playing' | 'results' | 'finished';
+  gameType: 'know-me-better' | 'pick-one' | 'dare-reveal' | null;
+  intimacyLevel: number;
+  currentCardIndex: number;
+  currentTurn: string | null;
+  answers: Record<string, string>;
+  spinResult: string | null;
+  readyPlayers: string[];
+  skipsUsed: number;
+};
+
+export type Room = {
+  code: string;
+  players: Player[];
+  gameState: GameState;
+  createdAt: string;
+};

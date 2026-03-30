@@ -2,40 +2,35 @@ import { useEffect, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
 import { clearDeviceSession } from '@/pages/lobby';
-import { useWs } from '@/hooks/ws-context';
-import { useUpdateGameState } from '@workspace/api-client-react';
+import { useRoom } from '@/hooks/use-room';
+import { updateGameState } from '@/lib/rooms';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
 import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
+import type { GameState } from '@/lib/supabase';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { Button } from '@/components/ui/button';
 import { Copy, Play, Lock, Flame, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { GameStateGameType } from '@workspace/api-client-react';
+
+type GameType = GameState['gameType'];
 
 export default function WaitingRoom() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, isAdult, leaveRoom } = useGameStore();
   const { toast } = useToast();
+  const { isConnected } = useRoom(code);
 
   const handleLeave = async () => {
+    internalTransitionRef.current = true;
     await clearDeviceSession();
     leaveRoom();
     setLocation('/lobby');
   };
 
-  const { isConnected, joinRoom } = useWs();
-
-  useEffect(() => {
-    if (code) joinRoom(code);
-  }, [code, joinRoom]);
-
-  // Track whether we are navigating within the room (internal transition) so
-  // the unmount cleanup knows not to release the device session in that case.
   const internalTransitionRef = useRef(false);
 
-  // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -49,7 +44,6 @@ export default function WaitingRoom() {
     const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
     return () => {
       clearInterval(interval);
-      // Release session on unexpected exit; skip for internal room transitions.
       if (!internalTransitionRef.current) {
         supabase.from('device_sessions').update({
           room_code: null,
@@ -59,11 +53,9 @@ export default function WaitingRoom() {
     };
   }, [code]);
 
-  const updateStateMutation = useUpdateGameState();
-
   useEffect(() => {
     if (currentRoom?.gameState?.phase === 'playing') {
-      internalTransitionRef.current = true; // internal — keep session locked
+      internalTransitionRef.current = true;
       setLocation(`/game/${code}`);
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
@@ -86,35 +78,19 @@ export default function WaitingRoom() {
     toast({ title: "Copied!", description: "Room code copied to clipboard." });
   };
 
-  const setLevel = (level: number) => {
+  const setLevel = async (level: number) => {
     if ((level === 3 || level === 4) && !isAdult()) {
-      toast({
-        title: "Locked",
-        description: "Levels 3 and 4 are for 18+ only.",
-        variant: "destructive"
-      });
+      toast({ title: "Locked", description: "Levels 3 and 4 are for 18+ only.", variant: "destructive" });
       return;
     }
-    updateStateMutation.mutate({
-      code,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: { ...currentRoom.gameState, intimacyLevel: level }
-      }
-    });
+    await updateGameState(code, { ...currentRoom.gameState, intimacyLevel: level });
   };
 
-  const setType = (type: GameStateGameType) => {
-    updateStateMutation.mutate({
-      code,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: { ...currentRoom.gameState, gameType: type }
-      }
-    });
+  const setType = async (type: GameType) => {
+    await updateGameState(code, { ...currentRoom.gameState, gameType: type });
   };
 
-  const startGame = () => {
+  const startGame = async () => {
     if (!currentRoom.gameState.gameType) {
       toast({ title: "Select a game type first", variant: "destructive" });
       return;
@@ -123,23 +99,21 @@ export default function WaitingRoom() {
       toast({ title: "Wait for partner to join", variant: "destructive" });
       return;
     }
-    updateStateMutation.mutate({
-      code,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: {
-          ...currentRoom.gameState,
-          phase: 'playing',
-          currentTurn: currentRoom.players[0].id
-        }
-      }
+    await updateGameState(code, {
+      ...currentRoom.gameState,
+      phase: 'playing',
+      currentCardIndex: 0,
+      answers: {},
+      readyPlayers: [],
+      skipsUsed: 0,
+      currentTurn: currentRoom.players[0].id,
     });
   };
 
-  const GAME_TYPES = [
-    { id: 'know-me-better' as GameStateGameType, label: 'Know Me Better', desc: 'Questions about each other' },
-    { id: 'pick-one' as GameStateGameType, label: 'Pick One', desc: 'This or that scenarios' },
-    { id: 'dare-reveal' as GameStateGameType, label: 'Dare or Reveal', desc: 'Spice things up' }
+  const GAME_TYPES: { id: GameType; label: string; desc: string }[] = [
+    { id: 'know-me-better', label: 'Know Me Better', desc: 'Questions about each other' },
+    { id: 'pick-one', label: 'Pick One', desc: 'This or that scenarios' },
+    { id: 'dare-reveal', label: 'Dare or Reveal', desc: 'Spice things up' },
   ];
 
   return (
@@ -154,7 +128,7 @@ export default function WaitingRoom() {
             <h1 className="text-4xl font-display font-black text-white tracking-widest">{code}</h1>
             <Copy className="w-5 h-5 text-white/70" />
           </div>
-          {!isConnected && <p className="text-red-300 text-xs mt-2 animate-pulse">Connecting to server...</p>}
+          {!isConnected && <p className="text-red-300 text-xs mt-2 animate-pulse">Connecting…</p>}
         </div>
 
         <div className="flex justify-between items-center gap-4 mb-8">
@@ -240,7 +214,7 @@ export default function WaitingRoom() {
               size="lg"
               variant="primary"
               onClick={startGame}
-              disabled={!partner || !currentRoom.gameState.gameType || updateStateMutation.isPending}
+              disabled={!partner || !currentRoom.gameState.gameType}
             >
               <Play className="mr-2 w-5 h-5 fill-current" />
               Start Game
@@ -250,12 +224,7 @@ export default function WaitingRoom() {
               <p className="text-white font-medium">Waiting for Host to start...</p>
             </div>
           )}
-          <Button
-            className="w-full opacity-60"
-            size="lg"
-            variant="ghost"
-            onClick={handleLeave}
-          >
+          <Button className="w-full opacity-60" size="lg" variant="ghost" onClick={handleLeave}>
             <LogOut className="mr-2 w-4 h-4" /> Leave Room
           </Button>
         </div>

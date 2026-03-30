@@ -5,7 +5,7 @@ import { useDeviceIdentity } from '@/hooks/use-device-identity';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
 import { SESSION_TIMEOUT_MS, HEARTBEAT_INTERVAL_MS } from '@/lib/session';
-import { useCreateRoom, useJoinRoom } from '@workspace/api-client-react';
+import { createRoom, joinRoom } from '@/lib/rooms';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LayoutWrapper } from '@/components/layout-wrapper';
@@ -48,12 +48,12 @@ export default function Lobby() {
   const { profile } = useDeviceIdentity();
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
 
-  // On lobby mount: release stale sessions, then ping last_active periodically
   useEffect(() => {
     const deviceId = getDeviceId();
     const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
-    // Clear room_code only if the existing session is past the inactivity timeout
     supabase.from('device_sessions').update({
       room_code: null,
       last_active: new Date().toISOString(),
@@ -62,7 +62,6 @@ export default function Lobby() {
       .lt('last_active', cutoff)
       .then(() => {});
 
-    // Periodic ping so a device idling on the lobby doesn't get falsely timed out
     const interval = setInterval(() => {
       supabase.from('device_sessions').update({
         last_active: new Date().toISOString(),
@@ -72,60 +71,59 @@ export default function Lobby() {
     return () => clearInterval(interval);
   }, []);
 
-  const createRoomMutation = useCreateRoom({
-    mutation: {
-      onSuccess: async (room) => {
-        const { ok, existingRoom } = await claimDeviceSession(room.code);
-        if (!ok) {
-          toast({
-            title: 'Already in a room',
-            description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        setRoom(room);
-        setLocation(`/room/${room.code}`);
-      },
-      onError: (error: any) => {
-        toast({ title: 'Failed to create room', description: error.message || 'An error occurred', variant: 'destructive' });
-      },
-    },
-  });
-
-  const joinRoomMutation = useJoinRoom({
-    mutation: {
-      onSuccess: async (room) => {
-        const { ok, existingRoom } = await claimDeviceSession(room.code);
-        if (!ok) {
-          toast({
-            title: 'Already in a room',
-            description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        setRoom(room);
-        setLocation(`/room/${room.code}`);
-      },
-      onError: () => {
-        toast({ title: 'Failed to join', description: 'Room not found or full', variant: 'destructive' });
-      },
-    },
-  });
-
-  const handleCreate = () => {
-    createRoomMutation.mutate({
-      data: { playerId: playerInfo.playerId, username: playerInfo.username, avatar: playerInfo.avatar },
-    });
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const room = await createRoom({
+        id: playerInfo.playerId,
+        username: playerInfo.username,
+        avatar: playerInfo.avatar,
+      });
+      const { ok, existingRoom } = await claimDeviceSession(room.code);
+      if (!ok) {
+        toast({
+          title: 'Already in a room',
+          description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      setRoom(room);
+      setLocation(`/room/${room.code}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'An error occurred';
+      toast({ title: 'Failed to create room', description: msg, variant: 'destructive' });
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (joinCode.length !== 4) return;
-    joinRoomMutation.mutate({
-      code: joinCode.toUpperCase(),
-      data: { playerId: playerInfo.playerId, username: playerInfo.username, avatar: playerInfo.avatar },
-    });
+    setJoining(true);
+    try {
+      const room = await joinRoom(joinCode.toUpperCase(), {
+        id: playerInfo.playerId,
+        username: playerInfo.username,
+        avatar: playerInfo.avatar,
+      });
+      const { ok, existingRoom } = await claimDeviceSession(room.code);
+      if (!ok) {
+        toast({
+          title: 'Already in a room',
+          description: `Your device is already linked to room ${existingRoom}. Leave that room first.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      setRoom(room);
+      setLocation(`/room/${room.code}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Room not found or full';
+      toast({ title: 'Failed to join', description: msg, variant: 'destructive' });
+    } finally {
+      setJoining(false);
+    }
   };
 
   return (
@@ -150,10 +148,9 @@ export default function Lobby() {
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-400/50 rounded-full blur-2xl" />
             <h2 className="text-2xl font-display font-bold text-white relative z-10">Start a Game</h2>
             <p className="text-white/80 text-sm relative z-10">Create a room and share the code.</p>
-            <Button className="w-full" size="lg" variant="primary" onClick={handleCreate}
-              disabled={createRoomMutation.isPending}>
+            <Button className="w-full" size="lg" variant="primary" onClick={handleCreate} disabled={creating}>
               <PlusCircle className="mr-2 w-5 h-5" />
-              {createRoomMutation.isPending ? 'Creating…' : 'Create Room'}
+              {creating ? 'Creating…' : 'Create Room'}
             </Button>
           </div>
 
@@ -174,7 +171,7 @@ export default function Lobby() {
                 className="h-14 bg-black/20 border-white/20 text-white placeholder:text-white/30 rounded-2xl text-2xl font-bold text-center uppercase focus-visible:ring-white/50 tracking-widest"
               />
               <Button className="h-14 px-6" variant="secondary" onClick={handleJoin}
-                disabled={joinCode.length !== 4 || joinRoomMutation.isPending}>
+                disabled={joinCode.length !== 4 || joining}>
                 <Users className="w-5 h-5" />
               </Button>
             </div>

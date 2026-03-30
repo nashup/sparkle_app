@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useGameStore } from '@/store/use-game-store';
-import { useWs } from '@/hooks/ws-context';
-import { useUpdateGameState } from '@workspace/api-client-react';
+import { useRoom } from '@/hooks/use-room';
+import { updateGameState } from '@/lib/rooms';
 import { supabase } from '@/lib/supabase';
 import { getDeviceId } from '@/lib/device';
 import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
@@ -12,22 +12,17 @@ import { getQuestionsForGame, Question } from '@/data/questions';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const QUESTIONS_PER_GAME = 10;
+const MAX_SKIPS = 3;
+
 export default function Game() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions } = useGameStore();
-
-  const { sendChat: wsSendChat, sendReaction: wsSendReaction, setChatOpen, joinRoom } = useWs();
-  const sendChat = useCallback((text: string) => wsSendChat(text, code || ''), [wsSendChat, code]);
-  const sendReaction = useCallback((emoji: string) => wsSendReaction(emoji, code || ''), [wsSendReaction, code]);
-
-  useEffect(() => {
-    if (code) joinRoom(code);
-  }, [code, joinRoom]);
+  const { sendChat, sendReaction, setChatOpen } = useRoom(code);
 
   const internalTransitionRef = useRef(false);
 
-  // Heartbeat — reassert room_code + last_active every 60s to keep session alive.
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -50,20 +45,18 @@ export default function Game() {
     };
   }, [code]);
 
-  const updateStateMutation = useUpdateGameState();
-
   const [answer, setAnswer] = useState('');
   const [countdown, setCountdown] = useState<number | null>(3);
   const [prevCardIndex, setPrevCardIndex] = useState<number>(-1);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // Seeded question list — same order for both players
   const activeQuestions = useMemo(() => {
     if (!currentRoom?.gameState.gameType) return [];
     return getQuestionsForGame(
       currentRoom.gameState.gameType as Question['type'],
       currentRoom.gameState.intimacyLevel,
       code || ''
-    );
+    ).slice(0, QUESTIONS_PER_GAME);
   }, [currentRoom?.gameState.gameType, currentRoom?.gameState.intimacyLevel, code]);
 
   const cardIndex = currentRoom?.gameState.currentCardIndex ?? 0;
@@ -73,8 +66,10 @@ export default function Game() {
   const hasBothAnswers = currentRoom
     ? Object.keys(currentRoom.gameState.answers).length >= 2
     : false;
+  const isHost = currentRoom?.players[0]?.id === playerInfo.playerId;
+  const skipsUsed = currentRoom?.gameState.skipsUsed ?? 0;
+  const canSkip = skipsUsed < MAX_SKIPS && !hasMyAnswer && countdown === null;
 
-  // Countdown on new card
   useEffect(() => {
     if (cardIndex !== prevCardIndex) {
       setPrevCardIndex(cardIndex);
@@ -93,48 +88,61 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [countdown]);
 
-  // Route to results when both answered
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase === 'results') {
-      internalTransitionRef.current = true; // internal — keep session locked
+      internalTransitionRef.current = true;
       setLocation(`/results/${code}`);
     }
     if (currentRoom.gameState.phase === 'lobby') {
-      internalTransitionRef.current = true; // internal — keep session locked
+      internalTransitionRef.current = true;
       setLocation(`/room/${code}`);
     }
   }, [currentRoom?.gameState.phase, code, setLocation]);
 
-  // If both answered, move to results phase (only host triggers this)
-  const isHost = currentRoom?.players[0]?.id === playerInfo.playerId;
   useEffect(() => {
     if (!hasBothAnswers || !isHost || !code || !currentRoom) return;
     if (currentRoom.gameState.phase !== 'playing') return;
-    const t = setTimeout(() => {
-      updateStateMutation.mutate({
-        code,
-        data: {
-          playerId: playerInfo.playerId,
-          gameState: { ...currentRoom.gameState, phase: 'results' }
-        }
-      });
+    const t = setTimeout(async () => {
+      setIsUpdating(true);
+      try {
+        await updateGameState(code, { ...currentRoom.gameState, phase: 'results' });
+      } finally {
+        setIsUpdating(false);
+      }
     }, 400);
     return () => clearTimeout(t);
   }, [hasBothAnswers, isHost]);
 
-  const handleSubmit = useCallback((selectedAnswer: string) => {
-    if (hasMyAnswer || countdown !== null || !currentRoom) return;
+  const handleSubmit = useCallback(async (selectedAnswer: string) => {
+    if (hasMyAnswer || countdown !== null || !currentRoom || !code) return;
     const newAnswers = { ...currentRoom.gameState.answers, [playerInfo.playerId]: selectedAnswer };
-    updateStateMutation.mutate({
-      code: code!,
-      data: {
-        playerId: playerInfo.playerId,
-        gameState: { ...currentRoom.gameState, answers: newAnswers }
-      }
-    });
+    setIsUpdating(true);
+    try {
+      await updateGameState(code, { ...currentRoom.gameState, answers: newAnswers });
+    } finally {
+      setIsUpdating(false);
+    }
     setAnswer('');
-  }, [hasMyAnswer, countdown, currentRoom, playerInfo.playerId, code, updateStateMutation]);
+  }, [hasMyAnswer, countdown, currentRoom, playerInfo.playerId, code]);
+
+  const handleSkip = useCallback(async () => {
+    if (!canSkip || !currentRoom || !code || !isHost) return;
+    setIsUpdating(true);
+    try {
+      const nextIndex = cardIndex + 1;
+      const isLast = nextIndex >= QUESTIONS_PER_GAME;
+      await updateGameState(code, {
+        ...currentRoom.gameState,
+        skipsUsed: skipsUsed + 1,
+        currentCardIndex: isLast ? cardIndex : nextIndex,
+        answers: {},
+        phase: isLast ? 'results' : 'playing',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [canSkip, currentRoom, code, isHost, cardIndex, skipsUsed]);
 
   if (!currentRoom || !currentQuestion) {
     return (
@@ -151,13 +159,22 @@ export default function Game() {
   return (
     <LayoutWrapper>
       <div className="flex-1 flex flex-col p-5 h-full relative">
-        {/* Header */}
         <div className="flex justify-between items-center mb-4 glass-panel rounded-full px-4 py-2 flex-shrink-0">
           <span className="text-white/70 text-sm font-bold">
-            {cardIndex + 1} / {activeQuestions.length}
+            {cardIndex + 1} / {QUESTIONS_PER_GAME}
           </span>
-          <div className="flex items-center gap-1">
-            <span className="text-white/60 text-xs mr-1">
+          <div className="flex items-center gap-2">
+            {isHost && (
+              <button
+                onClick={handleSkip}
+                disabled={!canSkip || isUpdating}
+                className={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${canSkip && !isUpdating ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
+                title={skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed} left)`}
+              >
+                {skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed})`}
+              </button>
+            )}
+            <span className="text-white/60 text-xs">
               Lvl {currentRoom.gameState.intimacyLevel} {levelEmojis[currentRoom.gameState.intimacyLevel]}
             </span>
             <span className="w-8 h-8 rounded-full flex items-center justify-center bg-white/20 text-lg">{playerInfo.avatar}</span>
@@ -165,7 +182,6 @@ export default function Game() {
           </div>
         </div>
 
-        {/* Countdown overlay */}
         <AnimatePresence>
           {countdown !== null && (
             <motion.div
@@ -186,7 +202,6 @@ export default function Game() {
           )}
         </AnimatePresence>
 
-        {/* Card */}
         <div className="flex-1 flex flex-col justify-center relative">
           <AnimatePresence mode="wait">
             <motion.div
@@ -208,7 +223,6 @@ export default function Game() {
                   {currentQuestion.text}
                 </h2>
 
-                {/* Answer area — disabled during countdown */}
                 <div className={`w-full mt-2 transition-opacity ${countdown !== null ? 'opacity-30 pointer-events-none' : ''}`}>
                   {hasMyAnswer ? (
                     <div className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-center">
@@ -229,7 +243,7 @@ export default function Game() {
                           variant="glass"
                           className="w-full h-14 text-base"
                           onClick={() => handleSubmit(opt)}
-                          disabled={updateStateMutation.isPending}
+                          disabled={isUpdating}
                         >
                           {opt}
                         </Button>
@@ -247,7 +261,7 @@ export default function Game() {
                       <Button
                         variant="primary"
                         className="w-full"
-                        disabled={!answer.trim() || updateStateMutation.isPending}
+                        disabled={!answer.trim() || isUpdating}
                         onClick={() => handleSubmit(answer)}
                       >
                         Submit
@@ -260,7 +274,6 @@ export default function Game() {
           </AnimatePresence>
         </div>
 
-        {/* Floating reactions display */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <AnimatePresence>
             {floatingReactions.map(r => (

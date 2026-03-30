@@ -1,12 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Switch, Route, Router as WouterRouter, useLocation } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { WsProvider } from '@/hooks/ws-context';
 import { DeviceIdentityProvider, useDeviceIdentity } from '@/hooks/use-device-identity';
 import { PrivacyPopup } from '@/components/privacy-popup';
 import { useGameStore } from '@/store/use-game-store';
+import { supabase } from '@/lib/supabase';
+import { SESSION_TIMEOUT_MS } from '@/lib/session';
 
 import ProfileSetup from './pages/profile-setup';
 import Profile from './pages/profile';
@@ -15,13 +16,24 @@ import Lobby from './pages/lobby';
 import WaitingRoom from './pages/waiting-room';
 import Game from './pages/game';
 import Results from './pages/results';
-import NotFound from '@/pages/not-found';
 import { Loader2 } from 'lucide-react';
+
+function NotFound({ isProfileComplete }: { isProfileComplete: boolean }) {
+  const [, setLocation] = useLocation();
+  const redirected = useRef(false);
+  useEffect(() => {
+    if (!redirected.current) {
+      redirected.current = true;
+      setLocation(isProfileComplete ? '/lobby' : '/profile-setup');
+    }
+  }, [isProfileComplete, setLocation]);
+  return null;
+}
 
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const { isLoading, isProfileComplete, profile, deviceId } = useDeviceIdentity();
+  const { isLoading, isProfileComplete, profile, deviceId, resetProfile } = useDeviceIdentity();
   const { setPlayerInfo } = useGameStore();
   const [location, setLocation] = useLocation();
 
@@ -37,8 +49,24 @@ function AppRoutes() {
   }, [profile, deviceId, setPlayerInfo]);
 
   useEffect(() => {
+    if (!profile || isLoading) return;
+    supabase
+      .from('device_sessions')
+      .select('last_active')
+      .eq('device_id', deviceId)
+      .single()
+      .then(({ data }) => {
+        if (data?.last_active) {
+          const age = Date.now() - new Date(data.last_active).getTime();
+          if (age > SESSION_TIMEOUT_MS) {
+            resetProfile().then(() => setLocation('/profile-setup'));
+          }
+        }
+      });
+  }, [profile, deviceId, isLoading, resetProfile, setLocation]);
+
+  useEffect(() => {
     if (isLoading) return;
-    // Legacy /auth route — redirect to root and let routing logic handle it
     if (location === '/auth') {
       setLocation('/');
       return;
@@ -75,7 +103,9 @@ function AppRoutes() {
         <Route path="/room/:code" component={WaitingRoom} />
         <Route path="/game/:code" component={Game} />
         <Route path="/results/:code" component={Results} />
-        <Route component={NotFound} />
+        <Route>
+          <NotFound isProfileComplete={isProfileComplete} />
+        </Route>
       </Switch>
 
       {isProfileComplete && profile && !profile.privacy_accepted && (
@@ -91,9 +121,7 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <DeviceIdentityProvider>
-            <WsProvider>
-              <AppRoutes />
-            </WsProvider>
+            <AppRoutes />
           </DeviceIdentityProvider>
         </WouterRouter>
         <Toaster />
