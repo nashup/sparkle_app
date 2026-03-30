@@ -21,7 +21,7 @@ export default function Results() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions, leaveRoom } = useGameStore();
-  const { sendChat, setChatOpen } = useRoom(code);
+  const { sendChat, sendReaction, setChatOpen } = useRoom(code);
   const [sentReactions, setSentReactions] = useState<Record<string, number>>({});
   const [partnerLeft, setPartnerLeft] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -195,6 +195,7 @@ export default function Results() {
   }, [leaveRoom, setLocation]);
 
   const handleReaction = (emoji: string) => {
+    sendReaction(emoji);
     setSentReactions(prev => ({ ...prev, [emoji]: (prev[emoji] || 0) + 1 }));
   };
 
