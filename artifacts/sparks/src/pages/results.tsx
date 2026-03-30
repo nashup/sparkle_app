@@ -21,13 +21,14 @@ export default function Results() {
   const { code } = useParams();
   const [, setLocation] = useLocation();
   const { playerInfo, currentRoom, floatingReactions, leaveRoom } = useGameStore();
-  const { sendChat, sendReaction, setChatOpen } = useRoom(code);
+  const { sendChat, setChatOpen } = useRoom(code);
   const [sentReactions, setSentReactions] = useState<Record<string, number>>({});
   const [partnerLeft, setPartnerLeft] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const internalTransitionRef = useRef(false);
 
+  // Heartbeat to keep device session alive
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -50,6 +51,7 @@ export default function Results() {
     };
   }, [code]);
 
+  // Confetti burst on results reveal
   useEffect(() => {
     confetti({
       particleCount: 80, spread: 70, origin: { y: 0.5 },
@@ -57,6 +59,7 @@ export default function Results() {
     });
   }, []);
 
+  // Navigate away when phase changes
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase === 'playing') {
@@ -69,6 +72,7 @@ export default function Results() {
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
 
+  // Partner-left detection via realtime; suppressed during intentional transitions
   useEffect(() => {
     if (!currentRoom || !code) return;
     const partner = currentRoom.players.find(p => p.id !== playerInfo.playerId);
@@ -95,7 +99,9 @@ export default function Results() {
     return () => { supabase.removeChannel(channel); };
   }, [currentRoom, code, playerInfo.playerId]);
 
-  // Host auto-advances to lobby when both players are ready on the results (end-of-game) screen
+  // Host auto-advances when both players are ready:
+  // - Non-final rounds: back to playing with next card index, preserving skipsUsed
+  // - Final round (last question): confetti + clear device session + lobby reset
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase !== 'results') return;
@@ -109,19 +115,33 @@ export default function Results() {
     const bothReady = readyPlayers.includes(playerInfo.playerId) && readyPlayers.includes(partner.id);
     if (!bothReady) return;
 
+    const nextIndex = currentRoom.gameState.currentCardIndex + 1;
+    const isLast = nextIndex >= QUESTIONS_PER_GAME;
+
     internalTransitionRef.current = true;
     setIsUpdating(true);
-    confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-    clearDeviceSession().then(() =>
+
+    if (isLast) {
+      confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
+      clearDeviceSession().then(() =>
+        updateGameState(code, {
+          ...currentRoom.gameState,
+          phase: 'lobby',
+          answers: {},
+          readyPlayers: [],
+          currentCardIndex: 0,
+          skipsUsed: 0,
+        })
+      ).finally(() => setIsUpdating(false));
+    } else {
       updateGameState(code, {
         ...currentRoom.gameState,
-        phase: 'lobby',
+        phase: 'playing',
+        currentCardIndex: nextIndex,
         answers: {},
         readyPlayers: [],
-        currentCardIndex: 0,
-        skipsUsed: 0,
-      })
-    ).finally(() => setIsUpdating(false));
+      }).finally(() => setIsUpdating(false));
+    }
   }, [currentRoom?.gameState?.readyPlayers, currentRoom?.gameState?.phase]);
 
   if (!currentRoom) return null;
@@ -175,7 +195,6 @@ export default function Results() {
   }, [leaveRoom, setLocation]);
 
   const handleReaction = (emoji: string) => {
-    sendReaction(emoji);
     setSentReactions(prev => ({ ...prev, [emoji]: (prev[emoji] || 0) + 1 }));
   };
 
