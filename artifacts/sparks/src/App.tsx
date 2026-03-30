@@ -8,6 +8,7 @@ import { PrivacyPopup } from '@/components/privacy-popup';
 import { useGameStore } from '@/store/use-game-store';
 import { supabase } from '@/lib/supabase';
 import { SESSION_TIMEOUT_MS } from '@/lib/session';
+import { getDeviceId } from '@/lib/device';
 
 import ProfileSetup from './pages/profile-setup';
 import Profile from './pages/profile';
@@ -59,6 +60,7 @@ function AppRoutes() {
         if (data?.last_active) {
           const age = Date.now() - new Date(data.last_active).getTime();
           if (age > SESSION_TIMEOUT_MS) {
+            localStorage.removeItem('sparks_device_id');
             resetProfile().then(() => setLocation('/profile-setup'));
           }
         }
