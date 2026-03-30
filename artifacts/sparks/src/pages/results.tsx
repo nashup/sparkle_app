@@ -114,14 +114,16 @@ export default function Results() {
     setIsUpdating(true);
     if (isLast) {
       confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-      updateGameState(code, {
-        ...currentRoom.gameState,
-        phase: 'lobby',
-        answers: {},
-        readyPlayers: [],
-        currentCardIndex: 0,
-        skipsUsed: 0,
-      }).finally(() => setIsUpdating(false));
+      clearDeviceSession().then(() =>
+        updateGameState(code, {
+          ...currentRoom.gameState,
+          phase: 'lobby',
+          answers: {},
+          readyPlayers: [],
+          currentCardIndex: 0,
+          skipsUsed: 0,
+        })
+      ).finally(() => setIsUpdating(false));
     } else {
       internalTransitionRef.current = true;
       updateGameState(code, {
@@ -165,6 +167,7 @@ export default function Results() {
     internalTransitionRef.current = true;
     setIsUpdating(true);
     try {
+      await clearDeviceSession();
       await updateGameState(code, {
         ...currentRoom.gameState,
         phase: 'lobby',
