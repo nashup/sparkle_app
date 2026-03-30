@@ -10,6 +10,7 @@ import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
 import { getQuestionsForGame, Question } from '@/data/questions';
 import { Button } from '@/components/ui/button';
+import { CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const QUESTIONS_PER_GAME = 10;
@@ -63,9 +64,10 @@ export default function Game() {
   const currentQuestion = activeQuestions[cardIndex] ?? null;
   const partner = currentRoom?.players.find(p => p.id !== playerInfo.playerId);
   const hasMyAnswer = !!currentRoom?.gameState.answers[playerInfo.playerId];
-  const hasBothAnswers = currentRoom
-    ? Object.keys(currentRoom.gameState.answers).length >= 2
-    : false;
+  const readyPlayers = currentRoom?.gameState.readyPlayers ?? [];
+  const amIReady = readyPlayers.includes(playerInfo.playerId);
+  const isPartnerReady = partner ? readyPlayers.includes(partner.id) : false;
+  const hasBothReady = partner ? (amIReady && isPartnerReady) : false;
   const isHost = currentRoom?.players[0]?.id === playerInfo.playerId;
   const skipsUsed = currentRoom?.gameState.skipsUsed ?? 0;
   const canSkip = isHost && skipsUsed < MAX_SKIPS && !hasMyAnswer && countdown === null;
@@ -100,20 +102,24 @@ export default function Game() {
     }
   }, [currentRoom?.gameState.phase, code, setLocation]);
 
-  // Host auto-advances to results screen when both players have submitted answers
+  // Host advances to results when both players signal ready after answering
   useEffect(() => {
-    if (!hasBothAnswers || !isHost || !code || !currentRoom) return;
+    if (!hasBothReady || !isHost || !code || !currentRoom) return;
     if (currentRoom.gameState.phase !== 'playing') return;
     const t = setTimeout(async () => {
       setIsUpdating(true);
       try {
-        await updateGameState(code, { ...currentRoom.gameState, phase: 'results' });
+        await updateGameState(code, {
+          ...currentRoom.gameState,
+          phase: 'results',
+          readyPlayers: [],
+        });
       } finally {
         setIsUpdating(false);
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [hasBothAnswers, isHost]);
+  }, [hasBothReady, isHost]);
 
   const handleSubmit = useCallback(async (selectedAnswer: string) => {
     if (hasMyAnswer || countdown !== null || !currentRoom || !code) return;
@@ -127,6 +133,21 @@ export default function Game() {
     setAnswer('');
   }, [hasMyAnswer, countdown, currentRoom, playerInfo.playerId, code]);
 
+  const handleToggleReady = useCallback(async () => {
+    if (!hasMyAnswer || !currentRoom || !code || isUpdating) return;
+    const current = currentRoom.gameState.readyPlayers ?? [];
+    const updated = current.includes(playerInfo.playerId)
+      ? current.filter(id => id !== playerInfo.playerId)
+      : [...current, playerInfo.playerId];
+    setIsUpdating(true);
+    try {
+      await updateGameState(code, { ...currentRoom.gameState, readyPlayers: updated });
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [hasMyAnswer, currentRoom, code, playerInfo.playerId, isUpdating]);
+
+  // Host-only skip: advances card without recording answers
   const handleSkip = useCallback(async () => {
     if (!canSkip || !currentRoom || !code) return;
     setIsUpdating(true);
@@ -166,16 +187,14 @@ export default function Game() {
             {cardIndex + 1} / {QUESTIONS_PER_GAME}
           </span>
           <div className="flex items-center gap-2">
-            {isHost && (
-              <button
-                onClick={handleSkip}
-                disabled={!canSkip || isUpdating}
-                className={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${canSkip && !isUpdating ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
-                title={skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed} left)`}
-              >
-                {skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed})`}
-              </button>
-            )}
+            <button
+              onClick={handleSkip}
+              disabled={!canSkip || isUpdating}
+              className={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${canSkip && !isUpdating ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
+              title={skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed} left)`}
+            >
+              {skipsUsed >= MAX_SKIPS ? 'No skips left' : `Skip (${MAX_SKIPS - skipsUsed})`}
+            </button>
             <span className="text-white/60 text-xs">
               Lvl {currentRoom.gameState.intimacyLevel} {levelEmojis[currentRoom.gameState.intimacyLevel]}
             </span>
@@ -227,15 +246,32 @@ export default function Game() {
 
                 <div className={`w-full mt-2 transition-opacity ${countdown !== null ? 'opacity-30 pointer-events-none' : ''}`}>
                   {hasMyAnswer ? (
-                    <div className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-center">
-                      <p className="text-white/60 text-sm mb-1">Your answer</p>
-                      <p className="text-white font-bold">{currentRoom.gameState.answers[playerInfo.playerId]}</p>
-                      {!hasBothAnswers && (
-                        <div className="mt-3 flex items-center justify-center gap-2 animate-pulse">
-                          <span className="text-xl">{partner?.avatar}</span>
-                          <p className="text-white/50 text-sm">Waiting for {partner?.username}...</p>
-                        </div>
-                      )}
+                    <div className="w-full space-y-3">
+                      <div className="p-4 rounded-2xl bg-white/10 border border-white/20 text-center">
+                        <p className="text-white/60 text-sm mb-1">Your answer</p>
+                        <p className="text-white font-bold">{currentRoom.gameState.answers[playerInfo.playerId]}</p>
+                      </div>
+                      <Button
+                        variant={amIReady ? 'secondary' : 'primary'}
+                        className="w-full"
+                        onClick={handleToggleReady}
+                        disabled={isUpdating}
+                      >
+                        <CheckCircle2 className={`mr-2 w-5 h-5 ${amIReady ? 'text-emerald-300' : ''}`} />
+                        {amIReady ? 'Ready ✓' : "I'm Ready"}
+                        {isPartnerReady && !amIReady && (
+                          <span className="ml-2 text-xs text-white/60">{partner?.username} is ready</span>
+                        )}
+                      </Button>
+                      <div className="flex justify-center items-center gap-3">
+                        <span className={`text-xs font-medium ${amIReady ? 'text-emerald-300' : 'text-white/40'}`}>
+                          {playerInfo.avatar} {amIReady ? '✓' : '…'}
+                        </span>
+                        <span className="text-white/20 text-xs">·</span>
+                        <span className={`text-xs font-medium ${isPartnerReady ? 'text-emerald-300' : 'text-white/40'}`}>
+                          {partner?.avatar || '?'} {isPartnerReady ? '✓' : '…'}
+                        </span>
+                      </div>
                     </div>
                   ) : currentQuestion.options ? (
                     <div className="space-y-2 w-full">
