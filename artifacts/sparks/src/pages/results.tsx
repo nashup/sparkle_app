@@ -10,7 +10,7 @@ import { HEARTBEAT_INTERVAL_MS } from '@/lib/session';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { ChatPopup } from '@/components/chat-popup';
 import { Button } from '@/components/ui/button';
-import { Trophy, LogOut, CheckCircle2 } from 'lucide-react';
+import { Trophy, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 
@@ -95,48 +95,6 @@ export default function Results() {
     return () => { supabase.removeChannel(channel); };
   }, [currentRoom, code, playerInfo.playerId]);
 
-  useEffect(() => {
-    if (!currentRoom || !code) return;
-    const { readyPlayers, phase } = currentRoom.gameState;
-    if (phase !== 'results') return;
-    const isHost = currentRoom.players[0]?.id === playerInfo.playerId;
-    if (!isHost) return;
-
-    const partner = currentRoom.players.find(p => p.id !== playerInfo.playerId);
-    if (!partner) return;
-
-    const bothReady = readyPlayers.includes(playerInfo.playerId) && readyPlayers.includes(partner.id);
-    if (!bothReady) return;
-
-    const nextIndex = currentRoom.gameState.currentCardIndex + 1;
-    const isLast = nextIndex >= QUESTIONS_PER_GAME;
-
-    setIsUpdating(true);
-    if (isLast) {
-      confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-      clearDeviceSession().then(() =>
-        updateGameState(code, {
-          ...currentRoom.gameState,
-          phase: 'lobby',
-          answers: {},
-          readyPlayers: [],
-          currentCardIndex: 0,
-          skipsUsed: 0,
-        })
-      ).finally(() => setIsUpdating(false));
-    } else {
-      internalTransitionRef.current = true;
-      updateGameState(code, {
-        ...currentRoom.gameState,
-        phase: 'playing',
-        currentCardIndex: nextIndex,
-        answers: {},
-        readyPlayers: [],
-        currentTurn: partner.id,
-      }).finally(() => setIsUpdating(false));
-    }
-  }, [currentRoom?.gameState?.readyPlayers, currentRoom?.gameState?.phase]);
-
   if (!currentRoom) return null;
 
   const partner = currentRoom.players.find(p => p.id !== playerInfo.playerId);
@@ -144,30 +102,16 @@ export default function Results() {
   const partnerAnswer = partner ? currentRoom.gameState.answers[partner.id] || '…waiting' : '…';
   const isHost = currentRoom.players[0]?.id === playerInfo.playerId;
   const isLevelComplete = currentRoom.gameState.currentCardIndex + 1 >= QUESTIONS_PER_GAME;
-  const readyPlayers = currentRoom.gameState.readyPlayers ?? [];
-  const amIReady = readyPlayers.includes(playerInfo.playerId);
-  const isPartnerReady = partner ? readyPlayers.includes(partner.id) : false;
-
-  const handleToggleReady = useCallback(async () => {
-    if (!code || !currentRoom || isUpdating) return;
-    const current = currentRoom.gameState.readyPlayers ?? [];
-    const updated = current.includes(playerInfo.playerId)
-      ? current.filter(id => id !== playerInfo.playerId)
-      : [...current, playerInfo.playerId];
-    setIsUpdating(true);
-    try {
-      await updateGameState(code, { ...currentRoom.gameState, readyPlayers: updated });
-    } finally {
-      setIsUpdating(false);
-    }
-  }, [code, currentRoom, playerInfo.playerId, isUpdating]);
 
   const handleEndGame = useCallback(async () => {
     if (!code || !currentRoom || isUpdating) return;
     internalTransitionRef.current = true;
     setIsUpdating(true);
     try {
-      await clearDeviceSession();
+      if (isLevelComplete) {
+        confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
+        await clearDeviceSession();
+      }
       await updateGameState(code, {
         ...currentRoom.gameState,
         phase: 'lobby',
@@ -179,7 +123,25 @@ export default function Results() {
     } finally {
       setIsUpdating(false);
     }
-  }, [code, currentRoom, isUpdating]);
+  }, [code, currentRoom, isUpdating, isLevelComplete]);
+
+  const handleNextRound = useCallback(async () => {
+    if (!code || !currentRoom || isUpdating) return;
+    internalTransitionRef.current = true;
+    setIsUpdating(true);
+    try {
+      await updateGameState(code, {
+        ...currentRoom.gameState,
+        phase: 'playing',
+        currentCardIndex: currentRoom.gameState.currentCardIndex + 1,
+        answers: {},
+        readyPlayers: [],
+        currentTurn: partner?.id ?? null,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [code, currentRoom, isUpdating, partner]);
 
   const handleLeaveRoom = useCallback(async () => {
     internalTransitionRef.current = true;
@@ -293,42 +255,27 @@ export default function Results() {
         </div>
 
         <div className="mt-6 space-y-3 flex-shrink-0 pb-4">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <Button
-              className="w-full"
-              size="lg"
-              variant={amIReady ? 'secondary' : 'primary'}
-              onClick={handleToggleReady}
-              disabled={isUpdating}
-            >
-              <CheckCircle2 className={`mr-2 w-5 h-5 ${amIReady ? 'text-emerald-300' : ''}`} />
-              {amIReady ? "Ready ✓" : "I'm Ready"}
-              {isPartnerReady && !amIReady && (
-                <span className="ml-2 text-xs text-white/60">{partner?.username} is ready</span>
+          {isHost ? (
+            <>
+              {isLevelComplete ? (
+                <Button className="w-full" size="lg" variant="primary" onClick={handleEndGame} disabled={isUpdating}>
+                  <Trophy className="mr-2 w-5 h-5" /> Play Again
+                </Button>
+              ) : (
+                <>
+                  <Button className="w-full" size="lg" variant="primary" onClick={handleNextRound} disabled={isUpdating}>
+                    Next Question →
+                  </Button>
+                  <Button className="w-full" size="lg" variant="ghost" onClick={handleEndGame} disabled={isUpdating}>
+                    End Game
+                  </Button>
+                </>
               )}
-            </Button>
-
-            <div className="flex justify-center items-center gap-3 mt-2">
-              <div className={`flex items-center gap-1.5 text-xs font-medium ${amIReady ? 'text-emerald-300' : 'text-white/40'}`}>
-                <span>{playerInfo.avatar}</span>
-                {amIReady ? '✓' : '…'}
-              </div>
-              <span className="text-white/20 text-xs">·</span>
-              <div className={`flex items-center gap-1.5 text-xs font-medium ${isPartnerReady ? 'text-emerald-300' : 'text-white/40'}`}>
-                <span>{partner?.avatar || '?'}</span>
-                {isPartnerReady ? '✓' : '…'}
-              </div>
+            </>
+          ) : (
+            <div className="glass-card p-4 rounded-2xl text-center">
+              <p className="text-white font-medium animate-pulse">Waiting for host…</p>
             </div>
-          </motion.div>
-
-          {isHost && (
-            <Button className="w-full opacity-60" size="lg" variant="ghost" onClick={handleEndGame} disabled={isUpdating}>
-              {isLevelComplete ? <><Trophy className="mr-2 w-5 h-5" /> Play Again</> : 'End Game'}
-            </Button>
           )}
         </div>
       </div>
