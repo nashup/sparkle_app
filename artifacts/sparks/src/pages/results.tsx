@@ -95,7 +95,7 @@ export default function Results() {
     return () => { supabase.removeChannel(channel); };
   }, [currentRoom, code, playerInfo.playerId]);
 
-  // Host auto-advances when both players are ready on the results screen
+  // Host auto-advances to lobby when both players are ready on the results (end-of-game) screen
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase !== 'results') return;
@@ -109,34 +109,19 @@ export default function Results() {
     const bothReady = readyPlayers.includes(playerInfo.playerId) && readyPlayers.includes(partner.id);
     if (!bothReady) return;
 
-    const nextIndex = currentRoom.gameState.currentCardIndex + 1;
-    const isLast = nextIndex >= QUESTIONS_PER_GAME;
-
+    internalTransitionRef.current = true;
     setIsUpdating(true);
-    if (isLast) {
-      internalTransitionRef.current = true;
-      confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-      clearDeviceSession().then(() =>
-        updateGameState(code, {
-          ...currentRoom.gameState,
-          phase: 'lobby',
-          answers: {},
-          readyPlayers: [],
-          currentCardIndex: 0,
-          skipsUsed: 0,
-        })
-      ).finally(() => setIsUpdating(false));
-    } else {
-      internalTransitionRef.current = true;
+    confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
+    clearDeviceSession().then(() =>
       updateGameState(code, {
         ...currentRoom.gameState,
-        phase: 'playing',
-        currentCardIndex: nextIndex,
+        phase: 'lobby',
         answers: {},
         readyPlayers: [],
-        currentTurn: partner.id,
-      }).finally(() => setIsUpdating(false));
-    }
+        currentCardIndex: 0,
+        skipsUsed: 0,
+      })
+    ).finally(() => setIsUpdating(false));
   }, [currentRoom?.gameState?.readyPlayers, currentRoom?.gameState?.phase]);
 
   if (!currentRoom) return null;

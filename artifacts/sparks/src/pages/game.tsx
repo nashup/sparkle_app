@@ -68,6 +68,7 @@ export default function Game() {
   const amIReady = readyPlayers.includes(playerInfo.playerId);
   const isPartnerReady = partner ? readyPlayers.includes(partner.id) : false;
   const hasBothReady = !!(partner && amIReady && isPartnerReady);
+  const isLastQuestion = cardIndex + 1 >= QUESTIONS_PER_GAME;
   const isHost = currentRoom?.players[0]?.id === playerInfo.playerId;
   const skipsUsed = currentRoom?.gameState.skipsUsed ?? 0;
   const skipsRemaining = MAX_SKIPS - skipsUsed;
@@ -103,7 +104,9 @@ export default function Game() {
     }
   }, [currentRoom?.gameState.phase, code, setLocation]);
 
-  // Host advances to results when both players are ready after submitting answers
+  // Host advances when both players are ready:
+  // - Last question → results screen (end of game)
+  // - Mid-game → next card, stay in playing
   useEffect(() => {
     if (!hasBothReady || !isHost || !code || !currentRoom) return;
     if (currentRoom.gameState.phase !== 'playing') return;
@@ -111,17 +114,28 @@ export default function Game() {
       internalTransitionRef.current = true;
       setIsUpdating(true);
       try {
-        await updateGameState(code, {
-          ...currentRoom.gameState,
-          phase: 'results',
-          readyPlayers: [],
-        });
+        if (isLastQuestion) {
+          await updateGameState(code, {
+            ...currentRoom.gameState,
+            phase: 'results',
+            answers: {},
+            readyPlayers: [],
+          });
+        } else {
+          await updateGameState(code, {
+            ...currentRoom.gameState,
+            phase: 'playing',
+            currentCardIndex: cardIndex + 1,
+            answers: {},
+            readyPlayers: [],
+          });
+        }
       } finally {
         setIsUpdating(false);
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [hasBothReady, isHost, currentRoom?.gameState.phase]);
+  }, [hasBothReady, isHost, currentRoom?.gameState.phase, isLastQuestion, cardIndex]);
 
   const handleSubmit = useCallback(async (selectedAnswer: string) => {
     if (hasMyAnswer || countdown !== null || !currentRoom || !code) return;
