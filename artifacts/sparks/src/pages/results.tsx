@@ -85,7 +85,7 @@ export default function Results() {
         },
         (payload) => {
           const updated = payload.new as { room_code: string | null };
-          if (updated.room_code === null) {
+          if (updated.room_code === null && !internalTransitionRef.current) {
             setPartnerLeft(true);
           }
         }
@@ -114,6 +114,7 @@ export default function Results() {
 
     setIsUpdating(true);
     if (isLast) {
+      internalTransitionRef.current = true;
       confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
       clearDeviceSession().then(() =>
         updateGameState(code, {
