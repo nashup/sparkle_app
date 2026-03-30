@@ -67,9 +67,7 @@ export default function Game() {
   const readyPlayers = currentRoom?.gameState.readyPlayers ?? [];
   const amIReady = readyPlayers.includes(playerInfo.playerId);
   const isPartnerReady = partner ? readyPlayers.includes(partner.id) : false;
-  const hasBothReady = currentRoom
-    ? readyPlayers.length >= 2
-    : false;
+  const hasBothReady = partner ? (amIReady && isPartnerReady) : false;
   const isHost = currentRoom?.players[0]?.id === playerInfo.playerId;
   const skipsUsed = currentRoom?.gameState.skipsUsed ?? 0;
   const canSkip = isHost && skipsUsed < MAX_SKIPS && !hasMyAnswer && countdown === null;
