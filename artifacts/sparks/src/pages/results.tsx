@@ -123,16 +123,16 @@ export default function Results() {
 
     if (isLast) {
       confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-      clearDeviceSession().then(() =>
-        updateGameState(code, {
-          ...currentRoom.gameState,
-          phase: 'lobby',
-          answers: {},
-          readyPlayers: [],
-          currentCardIndex: 0,
-          skipsUsed: 0,
-        })
-      ).finally(() => setIsUpdating(false));
+      // Update room state first so partner sees lobby transition before session clears
+      updateGameState(code, {
+        ...currentRoom.gameState,
+        phase: 'lobby',
+        answers: {},
+        readyPlayers: [],
+        currentCardIndex: 0,
+        skipsUsed: 0,
+      }).then(() => clearDeviceSession())
+        .finally(() => setIsUpdating(false));
     } else {
       updateGameState(code, {
         ...currentRoom.gameState,
