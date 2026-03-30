@@ -28,7 +28,6 @@ export default function Results() {
 
   const internalTransitionRef = useRef(false);
 
-  // Heartbeat — keep device session alive while on results screen
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -51,7 +50,6 @@ export default function Results() {
     };
   }, [code]);
 
-  // Confetti on first mount
   useEffect(() => {
     confetti({
       particleCount: 80, spread: 70, origin: { y: 0.5 },
@@ -59,7 +57,6 @@ export default function Results() {
     });
   }, []);
 
-  // Phase routing
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase === 'playing') {
@@ -72,7 +69,6 @@ export default function Results() {
     }
   }, [currentRoom?.gameState?.phase, code, setLocation]);
 
-  // Partner-left detection via Realtime on device_sessions
   useEffect(() => {
     if (!currentRoom || !code) return;
     const partner = currentRoom.players.find(p => p.id !== playerInfo.playerId);
@@ -99,7 +95,6 @@ export default function Results() {
     return () => { supabase.removeChannel(channel); };
   }, [currentRoom, code, playerInfo.playerId]);
 
-  // Host auto-advances when both players are ready
   useEffect(() => {
     if (!currentRoom || !code) return;
     const { readyPlayers, phase } = currentRoom.gameState;
@@ -116,10 +111,9 @@ export default function Results() {
     const nextIndex = currentRoom.gameState.currentCardIndex + 1;
     const isLast = nextIndex >= QUESTIONS_PER_GAME;
 
+    setIsUpdating(true);
     if (isLast) {
-      // Game over — go to lobby (both players re-enter waiting room)
       confetti({ particleCount: 150, spread: 120, origin: { y: 0.4 } });
-      setIsUpdating(true);
       updateGameState(code, {
         ...currentRoom.gameState,
         phase: 'lobby',
@@ -130,7 +124,6 @@ export default function Results() {
       }).finally(() => setIsUpdating(false));
     } else {
       internalTransitionRef.current = true;
-      setIsUpdating(true);
       updateGameState(code, {
         ...currentRoom.gameState,
         phase: 'playing',
@@ -149,7 +142,6 @@ export default function Results() {
   const partnerAnswer = partner ? currentRoom.gameState.answers[partner.id] || '…waiting' : '…';
   const isHost = currentRoom.players[0]?.id === playerInfo.playerId;
   const isLevelComplete = currentRoom.gameState.currentCardIndex + 1 >= QUESTIONS_PER_GAME;
-
   const readyPlayers = currentRoom.gameState.readyPlayers ?? [];
   const amIReady = readyPlayers.includes(playerInfo.playerId);
   const isPartnerReady = partner ? readyPlayers.includes(partner.id) : false;
@@ -157,8 +149,7 @@ export default function Results() {
   const handleToggleReady = useCallback(async () => {
     if (!code || !currentRoom || isUpdating) return;
     const current = currentRoom.gameState.readyPlayers ?? [];
-    const alreadyReady = current.includes(playerInfo.playerId);
-    const updated = alreadyReady
+    const updated = current.includes(playerInfo.playerId)
       ? current.filter(id => id !== playerInfo.playerId)
       : [...current, playerInfo.playerId];
     setIsUpdating(true);
@@ -203,7 +194,6 @@ export default function Results() {
     <LayoutWrapper>
       <div className="flex-1 flex flex-col p-5 h-full overflow-y-auto hide-scrollbar relative">
 
-        {/* Partner-left modal */}
         {partnerLeft && (
           <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6">
             <motion.div
@@ -223,7 +213,6 @@ export default function Results() {
           </div>
         )}
 
-        {/* Header */}
         {isLevelComplete ? (
           <div className="flex flex-col items-center justify-center text-center py-6 gap-2">
             <Trophy className="w-10 h-10 text-yellow-400" />
@@ -234,7 +223,6 @@ export default function Results() {
           <h2 className="text-3xl font-black text-white text-center mt-4 mb-1 text-glow">The Reveal!</h2>
         )}
 
-        {/* Answer cards */}
         <div className="flex flex-col gap-4 mt-4">
           <motion.div
             initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}
@@ -262,7 +250,6 @@ export default function Results() {
             </div>
           </motion.div>
 
-          {/* Reaction bar */}
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="glass-panel rounded-full py-2 px-3 flex justify-center gap-1"
@@ -284,7 +271,6 @@ export default function Results() {
           </motion.div>
         </div>
 
-        {/* Floating reactions */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <AnimatePresence>
             {floatingReactions.map(r => (
@@ -303,10 +289,12 @@ export default function Results() {
           </AnimatePresence>
         </div>
 
-        {/* Action area */}
         <div className="mt-6 space-y-3 flex-shrink-0 pb-4">
-          {isLevelComplete ? (
-            /* Game complete — just show "I'm Ready" to return to waiting room */
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
             <Button
               className="w-full"
               size="lg"
@@ -320,54 +308,28 @@ export default function Results() {
                 <span className="ml-2 text-xs text-white/60">{partner?.username} is ready</span>
               )}
             </Button>
-          ) : (
-            <>
-              {/* "I'm Ready" — both players see this */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                <Button
-                  className="w-full"
-                  size="lg"
-                  variant={amIReady ? 'secondary' : 'primary'}
-                  onClick={handleToggleReady}
-                  disabled={isUpdating}
-                >
-                  <CheckCircle2 className={`mr-2 w-5 h-5 ${amIReady ? 'text-emerald-300' : ''}`} />
-                  {amIReady ? "Ready ✓" : "I'm Ready"}
-                  {isPartnerReady && !amIReady && (
-                    <span className="ml-2 text-xs text-white/60">{partner?.username} is ready</span>
-                  )}
-                </Button>
 
-                {/* Ready status indicator */}
-                <div className="flex justify-center items-center gap-3 mt-2">
-                  <div className={`flex items-center gap-1.5 text-xs font-medium ${amIReady ? 'text-emerald-300' : 'text-white/40'}`}>
-                    <span>{playerInfo.avatar}</span>
-                    {amIReady ? '✓' : '…'}
-                  </div>
-                  <span className="text-white/20 text-xs">·</span>
-                  <div className={`flex items-center gap-1.5 text-xs font-medium ${isPartnerReady ? 'text-emerald-300' : 'text-white/40'}`}>
-                    <span>{partner?.avatar || '?'}</span>
-                    {isPartnerReady ? '✓' : '…'}
-                  </div>
-                </div>
-              </motion.div>
+            <div className="flex justify-center items-center gap-3 mt-2">
+              <div className={`flex items-center gap-1.5 text-xs font-medium ${amIReady ? 'text-emerald-300' : 'text-white/40'}`}>
+                <span>{playerInfo.avatar}</span>
+                {amIReady ? '✓' : '…'}
+              </div>
+              <span className="text-white/20 text-xs">·</span>
+              <div className={`flex items-center gap-1.5 text-xs font-medium ${isPartnerReady ? 'text-emerald-300' : 'text-white/40'}`}>
+                <span>{partner?.avatar || '?'}</span>
+                {isPartnerReady ? '✓' : '…'}
+              </div>
+            </div>
+          </motion.div>
 
-              {/* Host-only End Game button */}
-              {isHost && (
-                <Button className="w-full opacity-60" size="lg" variant="ghost" onClick={handleEndGame} disabled={isUpdating}>
-                  End Game
-                </Button>
-              )}
-            </>
+          {isHost && (
+            <Button className="w-full opacity-60" size="lg" variant="ghost" onClick={handleEndGame} disabled={isUpdating}>
+              {isLevelComplete ? <><Trophy className="mr-2 w-5 h-5" /> Play Again</> : 'End Game'}
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Leave Room — always visible, bottom corner */}
       <button
         onClick={handleLeaveRoom}
         className="absolute bottom-20 right-4 z-10 flex items-center gap-1.5 text-white/50 hover:text-white/80 text-xs transition-colors bg-black/20 hover:bg-black/30 rounded-full px-3 py-1.5 backdrop-blur-sm"

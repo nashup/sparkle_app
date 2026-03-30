@@ -23,7 +23,6 @@ export default function Game() {
 
   const internalTransitionRef = useRef(false);
 
-  // Heartbeat — keep device session alive while in game
   useEffect(() => {
     if (!code) return;
     const deviceId = getDeviceId();
@@ -51,7 +50,6 @@ export default function Game() {
   const [prevCardIndex, setPrevCardIndex] = useState<number>(-1);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Seeded question list — same order for both players
   const activeQuestions = useMemo(() => {
     if (!currentRoom?.gameState.gameType) return [];
     return getQuestionsForGame(
@@ -72,7 +70,6 @@ export default function Game() {
   const skipsUsed = currentRoom?.gameState.skipsUsed ?? 0;
   const canSkip = isHost && skipsUsed < MAX_SKIPS && !hasMyAnswer && countdown === null;
 
-  // Countdown resets when card advances
   useEffect(() => {
     if (cardIndex !== prevCardIndex) {
       setPrevCardIndex(cardIndex);
@@ -81,7 +78,6 @@ export default function Game() {
     }
   }, [cardIndex, prevCardIndex]);
 
-  // Countdown tick
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
@@ -92,7 +88,6 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [countdown]);
 
-  // Phase routing
   useEffect(() => {
     if (!currentRoom || !code) return;
     if (currentRoom.gameState.phase === 'results') {
@@ -105,7 +100,6 @@ export default function Game() {
     }
   }, [currentRoom?.gameState.phase, code, setLocation]);
 
-  // Host auto-advances to results when both players have answered
   useEffect(() => {
     if (!hasBothAnswers || !isHost || !code || !currentRoom) return;
     if (currentRoom.gameState.phase !== 'playing') return;
@@ -132,7 +126,6 @@ export default function Game() {
     setAnswer('');
   }, [hasMyAnswer, countdown, currentRoom, playerInfo.playerId, code]);
 
-  // Host-only skip: advances card without recording answers
   const handleSkip = useCallback(async () => {
     if (!canSkip || !currentRoom || !code) return;
     setIsUpdating(true);
@@ -167,7 +160,6 @@ export default function Game() {
   return (
     <LayoutWrapper>
       <div className="flex-1 flex flex-col p-5 h-full relative">
-        {/* Header */}
         <div className="flex justify-between items-center mb-4 glass-panel rounded-full px-4 py-2 flex-shrink-0">
           <span className="text-white/70 text-sm font-bold">
             {cardIndex + 1} / {QUESTIONS_PER_GAME}
@@ -191,7 +183,6 @@ export default function Game() {
           </div>
         </div>
 
-        {/* Countdown overlay */}
         <AnimatePresence>
           {countdown !== null && (
             <motion.div
@@ -212,7 +203,6 @@ export default function Game() {
           )}
         </AnimatePresence>
 
-        {/* Question card */}
         <div className="flex-1 flex flex-col justify-center relative">
           <AnimatePresence mode="wait">
             <motion.div
@@ -285,7 +275,6 @@ export default function Game() {
           </AnimatePresence>
         </div>
 
-        {/* Floating reactions */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <AnimatePresence>
             {floatingReactions.map(r => (

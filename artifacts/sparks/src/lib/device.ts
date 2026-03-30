@@ -1,4 +1,4 @@
-const DEVICE_ID_KEY = 'sparks_device_id';
+export const DEVICE_ID_KEY = 'sparks_device_id';
 
 export function getDeviceId(): string {
   let id = localStorage.getItem(DEVICE_ID_KEY);
