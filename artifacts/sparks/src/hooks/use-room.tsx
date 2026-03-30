@@ -61,6 +61,7 @@ export function useRoom(code: string | undefined): UseRoomReturn {
             players: unknown;
             game_state: unknown;
             created_at: string;
+            updated_at?: string;
           } | null;
           if (!row) return;
           const updated: Room = {
@@ -68,6 +69,7 @@ export function useRoom(code: string | undefined): UseRoomReturn {
             players: row.players as Room['players'],
             gameState: row.game_state as Room['gameState'],
             createdAt: row.created_at,
+            updatedAt: row.updated_at,
           };
           setRoom(updated);
         }

@@ -11,12 +11,13 @@ function generateCode(): string {
   return code;
 }
 
-function rowToRoom(row: { code: string; players: unknown; game_state: unknown; created_at: string }): Room {
+function rowToRoom(row: { code: string; players: unknown; game_state: unknown; created_at: string; updated_at?: string }): Room {
   return {
     code: row.code,
     players: row.players as Player[],
     gameState: row.game_state as GameState,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

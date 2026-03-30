@@ -49,4 +49,5 @@ export type Room = {
   players: Player[];
   gameState: GameState;
   createdAt: string;
+  updatedAt?: string;
 };
