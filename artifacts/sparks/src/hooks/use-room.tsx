@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { Room } from '@/lib/supabase';
 import { useGameStore } from '@/store/use-game-store';
 import type { ChatMessage, FloatingReaction } from '@/store/use-game-store';
+import { getRoom } from '@/lib/rooms';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UseRoomReturn {
@@ -14,7 +15,16 @@ interface UseRoomReturn {
 }
 
 export function useRoom(code: string | undefined): UseRoomReturn {
-  const { playerInfo, setRoom, addChatMessage, incrementUnread, addFloatingReaction, removeFloatingReaction, setIsConnected } = useGameStore();
+  const {
+    playerInfo,
+    setRoom,
+    addChatMessage,
+    incrementUnread,
+    addFloatingReaction,
+    removeFloatingReaction,
+    setIsConnected,
+  } = useGameStore();
+
   const isChatOpen = useRef(false);
   const [isConnected, setIsConnectedState] = useState(false);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -23,10 +33,15 @@ export function useRoom(code: string | undefined): UseRoomReturn {
     if (!code) return;
 
     const upper = code.toUpperCase();
+
+    getRoom(upper).then((room) => {
+      if (room) setRoom(room);
+    });
+
     const channelName = `room-${upper}`;
 
     const channel = supabase.channel(channelName, {
-      config: { broadcast: { self: false } },
+      config: { broadcast: { self: true } },
     });
 
     channelRef.current = channel;
@@ -61,7 +76,9 @@ export function useRoom(code: string | undefined): UseRoomReturn {
         if (!payload) return;
         const msg = payload as ChatMessage;
         addChatMessage(msg);
-        if (!isChatOpen.current) incrementUnread();
+        if (!isChatOpen.current && msg.playerId !== playerInfo.playerId) {
+          incrementUnread();
+        }
       })
       .on('broadcast', { event: 'reaction' }, ({ payload }) => {
         if (!payload) return;
